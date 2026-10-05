@@ -9,10 +9,11 @@ Não há banco de dados neste sprint (proposital: o foco é REST/MVC + relógio 
 Lamport). Reiniciar o processo zera as contas - é esperado.
 """
 import os
+import threading
 
 from . import config
 from .services.registro_eventos import RegistroEventos
-from .services.relogio_lamport import RelogioLamport
+from .services.relogio_vetorial import RelogioVetorial
 
 ID_AGENCIA = int(os.environ.get("AGENCIA_ID", "0"))
 
@@ -22,8 +23,12 @@ if not any(a["id"] == ID_AGENCIA for a in config.AGENCIAS):
         f"(validas: {[a['id'] for a in config.AGENCIAS]})"
     )
 
-relogio = RelogioLamport()
+relogio = RelogioVetorial(ID_AGENCIA, config.NUMERO_AGENCIAS)
 registro = RegistroEventos(f"agencia-{ID_AGENCIA}")
 
 # id_conta -> {"id": int, "nomeAluno": str, "saldo": float}
 contas: dict[int, dict] = {}
+# Controllers no threadpool e consumidor AMQP compartilham a mesma memória.
+lock = threading.RLock()
+transferencias: dict[str, dict] = {}
+creditos_processados: dict[str, dict] = {}
