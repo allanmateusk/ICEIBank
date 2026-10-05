@@ -397,3 +397,10 @@ A separação é razoavelmente clara. Onde ela "mistura" mais é o próprio
 `App.jsx`, que acumula o papel de Controller e de container da View - comum em
 apps React pequenos. Dava para extrair um hook `useSessao()` para isolar melhor
 a lógica de autenticação.
+
+
+---
+
+## Sprint 2 — trabalho individual
+
+As respostas das seções 6.4, 7.5 e 8.3, a confirmação de crédito, os testes observados e a declaração de uso de IA estão em [docs/sprint2.md](docs/sprint2.md). O conteúdo acima preserva a documentação da base sprint1.

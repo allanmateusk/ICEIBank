@@ -1,0 +1,18 @@
+{
+  "data": "2026-10-05T21:23:36.109Z",
+  "casos": [
+    "login JWT",
+    "saldo",
+    "criar conta",
+    "depósito",
+    "saque",
+    "transferência com confirmação real",
+    "histórico",
+    "mobile 360px",
+    "concorrência vetorial",
+    "destino offline",
+    "conta perdida após reinício",
+    "logout"
+  ],
+  "errosJavaScript": []
+}
