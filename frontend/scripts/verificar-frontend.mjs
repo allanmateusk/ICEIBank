@@ -359,6 +359,116 @@ try {
       )
       .join("\n")}`,
   );
+  // Regressões: histórico local e recuperação de resposta perdida sem novo débito.
+  await api(0, "POST", "/transferencias", {
+    idOrigem: 300,
+    idDestino: 303,
+    valor: 5,
+  });
+  const hOrigem = await api(0, "GET", "/contas/300/historico");
+  const hDestino = await api(0, "GET", "/contas/303/historico");
+  const tiposLocais = (h) =>
+    h.eventos
+      .filter(
+        (e) => e.detalhes.idOrigem === 300 && e.detalhes.idDestino === 303,
+      )
+      .map((e) => e.tipo);
+  assert.deepEqual(tiposLocais(hOrigem), ["TRANSFERENCIA_DEBITO"]);
+  assert.deepEqual(tiposLocais(hDestino), ["TRANSFERENCIA_CREDITO"]);
+  await page
+    .locator("nav")
+    .getByRole("button", { name: "Histórico", exact: true })
+    .click();
+  await page.locator(".movimentacao").first().waitFor();
+  assert.equal(
+    await page.getByText("Transferência recebida", { exact: true }).count(),
+    0,
+  );
+  await page.screenshot({
+    path: path.join(evidencia, "regressao-historico-local.png"),
+    fullPage: true,
+  });
+  await page
+    .locator("nav")
+    .getByRole("button", { name: "Transferir", exact: true })
+    .click();
+  await page.getByLabel("Conta de destino", { exact: true }).fill("303");
+  await page.getByLabel("Valor (R$)", { exact: true }).fill("7,00");
+  await page.getByRole("button", { name: "Revisar transferência" }).click();
+  const saldoAntes = (await api(0, "GET", "/contas/300")).saldo;
+  const chaves = [];
+  const perderResposta = async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    chaves.push(route.request().headers()["idempotency-key"]);
+    await route.fetch();
+    await route.abort("connectionreset");
+  };
+  await page.route("**/transferencias", perderResposta);
+  await page
+    .getByRole("button", { name: "Confirmar envio", exact: true })
+    .click();
+  await page
+    .getByText("Não foi possível falar com a agência. Ela está no ar?", {
+      exact: true,
+    })
+    .waitFor();
+  await page.unroute("**/transferencias", perderResposta);
+  assert.equal(
+    (await api(0, "GET", "/contas/300")).saldo,
+    +(saldoAntes - 7).toFixed(2),
+  );
+  assert(
+    await page
+      .getByRole("button", { name: "Editar", exact: true })
+      .isDisabled(),
+  );
+  assert(await page.getByLabel("Valor (R$)", { exact: true }).isDisabled());
+  await page
+    .locator("nav")
+    .getByRole("button", { name: "Resumo", exact: true })
+    .click();
+  await page
+    .locator("nav")
+    .getByRole("button", { name: "Transferir", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Recuperar resultado", exact: true })
+    .waitFor();
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Consultar conta", exact: true })
+    .click();
+  await page.getByLabel("Número da conta", { exact: true }).fill("300");
+  await page.getByRole("button", { name: "Consultar", exact: true }).click();
+  await page
+    .locator("nav")
+    .getByRole("button", { name: "Transferir", exact: true })
+    .click();
+  await api(0, "POST", "/contas/300/depositar", { valor: 100 });
+  const saldoAtual = (await api(0, "GET", "/contas/300")).saldo;
+  page.on("request", (req) => {
+    if (req.method() === "POST" && req.url().endsWith("/transferencias"))
+      chaves.push(req.headers()["idempotency-key"]);
+  });
+  await page
+    .getByRole("button", { name: "Recuperar resultado", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Revisar transferência" }).waitFor();
+  assert.deepEqual(chaves, [chaves[0], chaves[0]]);
+  assert.equal((await api(0, "GET", "/contas/300")).saldo, saldoAtual);
+  await page
+    .locator("nav")
+    .getByRole("button", { name: "Resumo", exact: true })
+    .click();
+  const saldoEsperado = new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(saldoAtual);
+  assert.equal(await page.locator(".saldo-valor").innerText(), saldoEsperado);
+  await page.screenshot({
+    path: path.join(evidencia, "regressao-recuperacao-saldo.png"),
+    fullPage: true,
+  });
   await page.getByRole("button", { name: "Sair", exact: true }).click();
   await page.getByRole("heading", { name: "Entrar", exact: true }).waitFor();
   assert.deepEqual(erros, []);
@@ -380,6 +490,9 @@ try {
           "destino offline",
           "conta perdida após reinício",
           "logout",
+          "histórico local sem crédito na origem",
+          "resposta perdida: mesmo UUID após navegação e reload",
+          "saldo atual após repetição e depósito concorrente",
         ],
         errosJavaScript: erros,
       },

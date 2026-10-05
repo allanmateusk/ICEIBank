@@ -66,9 +66,7 @@ export default function App() {
       if (atual !== contexto.current) return;
       if (e.dados?.transferenciaId) {
         setTransferencia(e.dados);
-        setConta((c) =>
-          c?.id === e.dados.idOrigem ? { ...c, saldo: e.dados.saldoOrigem } : c,
-        );
+        setConta((c) => (c?.id === e.dados.idOrigem ? null : c));
       }
       tratarErro(e);
       if (e.dados?.transferenciaId)
@@ -127,15 +125,37 @@ export default function App() {
     }
   }
   async function aoTransferir(origem, destino, valor, chave) {
-    const r = await executar(() =>
-      transferenciasApi.transferir(origem, destino, valor, chave),
-    );
+    const agenciaPedido = agencia;
+    setTransferencia(null);
+    const r = await executar(async () => {
+      let operacao;
+      try {
+        operacao = await transferenciasApi.transferir(
+          origem,
+          destino,
+          valor,
+          chave,
+        );
+      } catch (e) {
+        if (e.dados?.transferenciaId || [400, 404, 422, 503].includes(e.status))
+          transferenciasApi.limparPedidoPendente(agenciaPedido, chave);
+        throw e;
+      }
+      transferenciasApi.limparPedidoPendente(agenciaPedido, chave);
+      try {
+        const atual = await contasApi.consultarSaldo(origem);
+        return { operacao, atual };
+      } catch (erroSaldo) {
+        return { operacao, erroSaldo };
+      }
+    });
     if (r) {
-      setTransferencia(r);
+      setTransferencia(r.operacao);
       setEsperaLonga(false);
-      setConta((c) => (c?.id === origem ? { ...c, saldo: r.saldoOrigem } : c));
+      setConta((c) => (c?.id === origem ? r.atual || null : c));
+      if (r.erroSaldo) tratarErro(r.erroSaldo);
     }
-    return r;
+    return r?.operacao;
   }
 
   useEffect(() => {

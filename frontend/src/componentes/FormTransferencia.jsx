@@ -1,17 +1,25 @@
 import { useState } from "react";
 import { agenciaDaConta } from "../api/contas.js";
 import { moeda, paraInteiroConta, paraNumero } from "../util/numeros.js";
+import {
+  lerPedidoPendente,
+  guardarPedidoPendente,
+} from "../api/transferencias.js";
 
 export default function FormTransferencia({
   aoTransferir,
   agenciaAtual,
   conta,
 }) {
-  const [origem, setOrigem] = useState(String(conta?.id ?? agenciaAtual));
-  const [destino, setDestino] = useState("");
-  const [valor, setValor] = useState("");
+  const [inicial] = useState(() => lerPedidoPendente(agenciaAtual));
+  const [origem, setOrigem] = useState(
+    String(inicial?.idOrigem ?? conta?.id ?? agenciaAtual),
+  );
+  const [destino, setDestino] = useState(String(inicial?.idDestino ?? ""));
+  const [valor, setValor] = useState(String(inicial?.valor ?? ""));
   const [erro, setErro] = useState("");
-  const [pedido, setPedido] = useState(null);
+  const [pedido, setPedido] = useState(inicial);
+  const [incerto, setIncerto] = useState(!!inicial);
   const [enviando, setEnviando] = useState(false);
   function editar(setter, value) {
     setter(value);
@@ -20,6 +28,7 @@ export default function FormTransferencia({
   }
   function revisar(e) {
     e.preventDefault();
+    if (incerto) return;
     const idOrigem = paraInteiroConta(origem),
       idDestino = paraInteiroConta(destino),
       n = paraNumero(valor);
@@ -46,6 +55,8 @@ export default function FormTransferencia({
     if (enviando) return;
     setEnviando(true);
     try {
+      guardarPedidoPendente(agenciaAtual, pedido);
+      setIncerto(true);
       const r = await aoTransferir(
         pedido.idOrigem,
         pedido.idDestino,
@@ -56,6 +67,14 @@ export default function FormTransferencia({
         setPedido(null);
         setValor("");
       }
+      if (!lerPedidoPendente(agenciaAtual)) {
+        setIncerto(false);
+        setPedido(null);
+      }
+    } catch {
+      setErro(
+        "Não foi possível guardar o pedido nesta aba. Nenhum novo envio foi iniciado.",
+      );
     } finally {
       setEnviando(false);
     }
@@ -68,6 +87,7 @@ export default function FormTransferencia({
         <label>
           Conta de origem
           <input
+            disabled={incerto}
             value={origem}
             onChange={(e) => editar(setOrigem, e.target.value)}
             inputMode="numeric"
@@ -77,6 +97,7 @@ export default function FormTransferencia({
         <label>
           Conta de destino
           <input
+            disabled={incerto}
             value={destino}
             onChange={(e) => editar(setDestino, e.target.value)}
             inputMode="numeric"
@@ -86,6 +107,7 @@ export default function FormTransferencia({
         <label className="full">
           Valor (R$)
           <input
+            disabled={incerto}
             value={valor}
             onChange={(e) => editar(setValor, e.target.value)}
             inputMode="decimal"
@@ -102,6 +124,12 @@ export default function FormTransferencia({
       )}
       {pedido && (
         <div className="revisao">
+          {incerto && (
+            <p role="status">
+              O resultado deste pedido ainda precisa ser recuperado. Reutilize o
+              mesmo pedido antes de iniciar outra transferência.
+            </p>
+          )}
           <h3>Confira sua transferência</h3>
           <p>
             <strong>{moeda(pedido.valor)}</strong> da conta {pedido.idOrigem}{" "}
@@ -115,11 +143,15 @@ export default function FormTransferencia({
           </p>
           <div className="acoes">
             <button type="button" disabled={enviando} onClick={enviar}>
-              {enviando ? "Enviando…" : "Confirmar envio"}
+              {enviando
+                ? "Enviando…"
+                : incerto
+                  ? "Recuperar resultado"
+                  : "Confirmar envio"}
             </button>
             <button
               type="button"
-              disabled={enviando}
+              disabled={enviando || incerto}
               className="ghost"
               onClick={() => setPedido(null)}
             >
