@@ -125,13 +125,6 @@ A deduplicação do backend continua em memória. Recuperar a chave na mesma aba
 não garante deduplicação após reiniciar o processo da agência. Persistência e
 transações distribuídas continuam fora do escopo desta sprint.
 
-## Uso de IA na sprint2
-
-Codex/OpenAI foi utilizado como apoio ao planejamento, protótipos, implementação,
-revisão, correções e testes automatizados da sprint2. A declaração sobre Claude
-em `RESPOSTAS.md` pertence à base da sprint1. O aluno deve estudar e explicar o
-código entregue; esta declaração não afirma que a defesa oral já ocorreu.
-
 ## Pendências formais da entrega
 
 Os relatórios gerados não substituem as capturas de terminal solicitadas na

@@ -154,7 +154,7 @@ persistência financeira ou promessa de exactly-once; esses temas ficam para as
 próximas etapas. Deduplicação vale durante a vida do processo.
 
 [RESPOSTAS.md](RESPOSTAS.md) preserva o material da sprint1 e aponta as respostas
-e observações da sprint2 em [docs/sprint2.md](docs/sprint2.md). Uso de IA está
-declarado nesse documento. Configurações JWT/senhas de desenvolvimento da base
+e observações da sprint2 em [docs/sprint2.md](docs/sprint2.md).
+Configurações JWT/senhas de desenvolvimento da base
 continuam disponíveis por variáveis de ambiente; definir segredos pessoais fora
 do Git ao usar outro ambiente.

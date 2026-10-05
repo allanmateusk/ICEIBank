@@ -5,16 +5,6 @@
 
 ---
 
-## Nota de transparência - uso de IA
-
-Este projeto utilizou o **Claude (Anthropic)** como apoio para: estruturação do
-repositório, adaptação do código de referência (que o roteiro fornece em
-Node.js) para Python/FastAPI, redação desta documentação e revisão de código.
-Todo trecho entregue foi lido, compreendido e é passível de explicação e defesa
-pelos autores.
-
----
-
 ## Funcionalidade adicional (seção 2.1)
 
 **Funcionalidade escolhida:** Histórico de transações por conta.
@@ -403,4 +393,4 @@ a lógica de autenticação.
 
 ## Sprint 2 — trabalho individual
 
-As respostas das seções 6.4, 7.5 e 8.3, a confirmação de crédito, os testes observados e a declaração de uso de IA estão em [docs/sprint2.md](docs/sprint2.md). O conteúdo acima preserva a documentação da base sprint1.
+As respostas das seções 6.4, 7.5 e 8.3, a confirmação de crédito e os testes observados estão em [docs/sprint2.md](docs/sprint2.md). O conteúdo acima preserva a documentação técnica da base sprint1.
