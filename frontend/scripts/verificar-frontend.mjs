@@ -15,7 +15,7 @@ const repo = path.resolve(frontend, ".."),
 const vhost = `browser-${randomUUID()}`;
 const portaBase = 14600;
 const pasta = path.join(agenciaDir, "data", vhost);
-const evidencia = path.join(repo, "evidencias", "sprint2");
+const evidencia = process.env.EVIDENCIAS_DIR || path.join(repo, "evidencias", "sprint2");
 fs.mkdirSync(pasta, { recursive: true });
 fs.mkdirSync(evidencia, { recursive: true });
 const processos = new Map(),
@@ -77,14 +77,16 @@ async function iniciar(id) {
     {
       cwd: agenciaDir,
       windowsHide: true,
-      env: {
-        ...process.env,
-        AGENCIA_ID: String(id),
-        OFFSET: String(portaBase - 4000),
-        PASTA_DADOS: pasta,
-        PYTHONUNBUFFERED: "1",
-        RABBITMQ_URL: `amqp://iceibank:iceibank-dev@127.0.0.1:5678/${vhost}`,
-      },
+      env: Object.fromEntries(
+        Object.entries({
+          ...process.env,
+          AGENCIA_ID: String(id),
+          OFFSET: String(portaBase - 4000),
+          PASTA_DADOS: pasta,
+          PYTHONUNBUFFERED: "1",
+          RABBITMQ_URL: `amqp://iceibank:iceibank-dev@127.0.0.1:5678/${vhost}`,
+        }).filter(([chave]) => chave !== "DATABASE_URL"),
+      ),
     },
   );
   processos.set(id, p);
@@ -182,6 +184,7 @@ try {
   const erros = [];
   page.on("pageerror", (e) => erros.push(e.message));
   await page.goto("http://127.0.0.1:15173", { waitUntil: "domcontentloaded" });
+  await page.getByLabel("Usuário", { exact: true }).fill("allan");
   await page.getByLabel("Senha", { exact: true }).fill("iceibank");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.getByRole("heading", { name: "Meu dinheiro" }).waitFor();

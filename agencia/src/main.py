@@ -13,6 +13,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import estado
+from .banco import fechar as fechar_banco
+from .banco import iniciar as iniciar_banco
 from .rotas import router
 from .controllers import transferencias_controller
 from .services.mensageria import Mensageria
@@ -20,6 +22,7 @@ from .services.mensageria import Mensageria
 
 @asynccontextmanager
 async def lifespan(app):
+    iniciar_banco()
     broker = Mensageria(estado.ID_AGENCIA, transferencias_controller.consumir)
     app.state.mensageria = broker
     transferencias_controller.broker_ativo = broker
@@ -28,6 +31,7 @@ async def lifespan(app):
         yield
     finally:
         await broker.fechar()
+        fechar_banco()
 
 app = FastAPI(
     title=f"ICEIBank - Agencia {estado.ID_AGENCIA}",

@@ -12,6 +12,9 @@ import time
 import unittest
 from datetime import timedelta
 from uuid import uuid4
+import psycopg
+from psycopg import sql
+from psycopg.conninfo import make_conninfo
 import httpx
 from src.seguranca import criar_token
 
@@ -26,10 +29,21 @@ class IntegracaoTest(unittest.TestCase):
         cls.vhost = "teste-" + str(uuid4())
         cls.pasta = RAIZ / "data" / cls.vhost
         cls.pasta.mkdir(parents=True)
+        cls.schema = "teste_" + uuid4().hex
+        cls.banco = None
         cls.processos = {}
         cls.arquivos = []
         cls.cliente = httpx.Client(timeout=10)
         try:
+            cls.banco = psycopg.connect(
+                "postgresql://iceibank:iceibank-dev@127.0.0.1:5434/iceibank",
+                autocommit=True,
+            )
+            cls.banco.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(cls.schema)))
+            cls.database_url = make_conninfo(
+                "postgresql://iceibank:iceibank-dev@127.0.0.1:5434/iceibank",
+                options=f"-c search_path={cls.schema}"
+            )
             cls.cliente.put(f"{GESTOR}/vhosts/{cls.vhost}", auth=AUTH, json={}).raise_for_status()
             cls.cliente.put(f"{GESTOR}/permissions/{cls.vhost}/iceibank", auth=AUTH,
                             json={"configure": ".*", "write": ".*", "read": ".*"}).raise_for_status()
@@ -50,6 +64,7 @@ class IntegracaoTest(unittest.TestCase):
         env = {**os.environ, "AGENCIA_ID": str(agencia), "OFFSET": "10500",
                "PASTA_DADOS": str(cls.pasta), "PYTHONUNBUFFERED": "1",
                "RABBITMQ_URL": f"amqp://iceibank:iceibank-dev@127.0.0.1:5678/{cls.vhost}"}
+        env["DATABASE_URL"] = cls.database_url
         arquivo = open(cls.pasta / f"processo-{agencia}-{uuid4().hex[:6]}.log", "w", encoding="utf-8")
         cls.arquivos.append(arquivo)
         processo = subprocess.Popen([sys.executable, "-m", "uvicorn", "src.main:app", "--host", "127.0.0.1",
@@ -84,6 +99,9 @@ class IntegracaoTest(unittest.TestCase):
         # Remove apenas o vhost exclusivo criado por este teste.
         cls.cliente.delete(f"{GESTOR}/vhosts/{cls.vhost}", auth=AUTH)
         cls.cliente.close()
+        if cls.banco is not None:
+            cls.banco.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(cls.schema)))
+            cls.banco.close()
 
     def chamada(self, agencia, metodo, rota, **kwargs):
         return self.cliente.request(metodo, self.url(agencia) + rota,
@@ -155,3 +173,33 @@ class IntegracaoTest(unittest.TestCase):
     def test_04_status_protegido(self):
         self.assertEqual(self.cliente.get(self.url(0) + f"/transferencias/{uuid4()}").status_code, 401)
         self.assertEqual(self.chamada(0, "GET", f"/transferencias/{uuid4()}").status_code, 404)
+
+    def test_05_cadastro_persiste_sem_persistir_contas(self):
+        dados = {"usuario": "usuario_novo", "senha": "senha-teste-123"}
+        resposta = self.cliente.post(self.url(2) + "/auth/cadastro", json=dados)
+        self.assertEqual(resposta.status_code, 201, resposta.text)
+        self.assertEqual(resposta.json(), {"usuario": dados["usuario"]})
+        self.assertEqual(self.cliente.post(self.url(2) + "/auth/cadastro", json=dados).status_code, 409)
+        self.assertEqual(self.cliente.post(self.url(2) + "/auth/cadastro",
+                         json={"usuario": "x", "senha": "123"}).status_code, 422)
+        self.assertEqual(self.cliente.post(self.url(2) + "/auth/login",
+                         json={**dados, "senha": "errada"}).status_code, 401)
+        with self.banco.cursor() as cur:
+            cur.execute(sql.SQL("SELECT salt, hash FROM {}.usuarios WHERE usuario = %s")
+                        .format(sql.Identifier(self.schema)), (dados["usuario"],))
+            salt, hash_senha = cur.fetchone()
+            self.assertEqual(len(salt), 16)
+            self.assertNotEqual(bytes(hash_senha), dados["senha"].encode())
+            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = %s",
+                        (self.schema,))
+            self.assertEqual({row[0] for row in cur.fetchall()}, {"usuarios"})
+        self.criar(602, 75)
+        self.parar(2)
+        self.iniciar(2)
+        login = self.cliente.post(self.url(2) + "/auth/login", json=dados)
+        self.assertEqual(login.status_code, 200, login.text)
+        headers = {"Authorization": "Bearer " + login.json()["access_token"]}
+        self.assertEqual(self.cliente.get(self.url(2) + "/contas/602", headers=headers).status_code, 404)
+        criada = self.cliente.post(self.url(2) + "/contas", headers=headers,
+                                  json={"id": 602, "nomeAluno": "Teste", "saldoInicial": 10})
+        self.assertEqual(criada.status_code, 201, criada.text)

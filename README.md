@@ -23,10 +23,26 @@ processamento local ou recebimento do resultado do destino.
 Pré-requisitos: Python 3.12+, [uv](https://docs.astral.sh/uv/),
 Node **20.19+ ou 22.12+**, npm e Docker Desktop para o broker local.
 
-Na raiz:
+Na raiz, para subir RabbitMQ, Postgres, as três agências e o frontend:
 
 ```powershell
-docker compose up -d --wait
+docker compose up -d --build --wait
+```
+
+Abra [o frontend](http://localhost:5173). Na tela inicial, **Criar usuário**
+grava o login no Postgres. Depois de entrar, **Criar conta** cria a conta
+bancária somente na memória da agência. Usuários de desenvolvimento `allan` e `lara` (senha
+`iceibank`) são criados na primeira subida, se ainda não existirem.
+
+Postgres local: `127.0.0.1:5434`, banco `iceibank`, usuário `iceibank`, senha
+`iceibank-dev`. O volume `postgres-data` guarda somente usuários entre
+reinícios. Contas, saldos, deduplicação e acompanhamento das transferências
+continuam em memória, mesmo com Postgres ativo.
+
+Para rodar as agências no host, com o banco e o broker no Docker:
+
+```powershell
+docker compose up -d --wait postgres rabbitmq
 cd agencia
 uv sync
 cd ../frontend
@@ -49,9 +65,7 @@ cd frontend
 npm run dev
 ```
 
-Abra [o frontend](http://localhost:5173). Usuário de desenvolvimento `allan`,
-senha `iceibank` (também mantido o usuário `lara` da base). Crie ou consulte uma
-conta da agência selecionada. Exemplo: contas 300/303 → Agência 0; 301 → Agência 1;
+Crie ou consulte uma conta da agência selecionada. Exemplo: contas 300/303 → Agência 0; 301 → Agência 1;
 302 → Agência 2. No início não existem contas.
 
 O script usa AMQP local em `127.0.0.1:5678` se `RABBITMQ_URL` não estiver definida.
@@ -81,7 +95,7 @@ As portas HTTP ficam em `4000 + OFFSET + agencia`.
 ## APIs
 
 JWT em `Authorization: Bearer <token>` para contas, histórico e transferências.
-`POST /auth/login` continua aberto. O escopo do projeto é autenticação, sem
+`POST /auth/login` e `POST /auth/cadastro` são abertos. O escopo do projeto é autenticação, sem
 uma regra de propriedade por titular/usuário.
 
 | Endpoint | Finalidade |
@@ -124,7 +138,10 @@ npm run test:e2e
 O E2E usa o Edge instalado no Windows (sem abrir janela). Em Linux, instale o
 Chromium do Playwright com `npx playwright install chromium`. Os testes usam
 vhosts exclusivos no broker local e processos temporários; limpam apenas esses
-vhosts. Backend: 14500–14502; E2E: 14600–14602 e 15173. Deixe essas portas livres.
+vhosts e o esquema exclusivo de usuários criado pelos testes de integração.
+Esses testes usam o Postgres local em 5434 e verificam login persistente e
+perda das contas após reinício. O E2E mantém também a cobertura sem banco.
+Backend: 14500–14502; E2E: 14600–14602 e 15173. Deixe essas portas livres.
 O teste não usa sua instância CloudAMQP nem altera contas da sessão manual.
 
 `evidencias/sprint2/` contém capturas reais da interface e relatórios visuais

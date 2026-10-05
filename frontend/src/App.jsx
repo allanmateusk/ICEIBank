@@ -7,9 +7,10 @@ import {
   setToken,
   SessaoExpirada,
 } from "./api/cliente.js";
-import { login } from "./api/auth.js";
+import { cadastrar, login } from "./api/auth.js";
 import * as contasApi from "./api/contas.js";
 import * as transferenciasApi from "./api/transferencias.js";
+import Icone from "./componentes/Icone.jsx";
 import Login from "./componentes/Login.jsx";
 import Mensagem from "./componentes/Mensagem.jsx";
 import ConsultaSaldo from "./componentes/ConsultaSaldo.jsx";
@@ -102,6 +103,13 @@ export default function App() {
   }
   async function aoEntrar(usuario, senha) {
     if (await executar(() => login(usuario, senha))) setAutenticado(true);
+  }
+  async function aoCadastrar(usuario, senha) {
+    const entrou = await executar(async () => {
+      await cadastrar(usuario, senha);
+      return login(usuario, senha);
+    }, "Usuário criado.");
+    if (entrou) setAutenticado(true);
   }
   async function aoCriar(id, nome, saldo) {
     const c = await executar(
@@ -217,7 +225,7 @@ export default function App() {
     sacar: "Sacar",
   };
   return (
-    <div className="app">
+    <div className={`app ${autenticado ? "autenticado" : "entrada"}`}>
       <aside className="sidebar">
         <a
           className="marca"
@@ -227,9 +235,9 @@ export default function App() {
             setTela("resumo");
           }}
         >
-          ICEI<span>Bank</span>
+          <span className="marca-simbolo"><Icone nome="banco" /></span>ICEI<span>Bank</span>
         </a>
-        <div className="marca-sub">Seu banco distribuído.</div>
+        <div className="marca-sub">Seu dinheiro, mais perto.</div>
         {autenticado && (
           <nav aria-label="Navegação principal">
             {[
@@ -244,19 +252,20 @@ export default function App() {
                 aria-current={tela === id ? "page" : undefined}
                 onClick={() => setTela(id)}
               >
-                {texto}
+                <Icone nome={id} /><span>{texto}</span>
               </button>
             ))}
             <button
               type="button"
               className="nav-item nav-secundario"
+              aria-current={tela === "criar" ? "page" : undefined}
               onClick={() => setTela("criar")}
             >
-              Criar conta
+              <Icone nome="criar" /><span>Criar conta</span>
             </button>
           </nav>
         )}
-        <div className="sidebar-rodape">ICEIBank · Sprint 2</div>
+        <div className="sidebar-rodape"><Icone nome="banco" /><strong>Simples. Conectado.</strong><span>Três agências. Uma experiência.</span><small>ICEIBank · Projeto acadêmico</small></div>
       </aside>
       <div className="conteudo">
         <header className="topbar">
@@ -288,16 +297,19 @@ export default function App() {
           <Mensagem msg={msg} />
           {!autenticado ? (
             <div className="login-area">
-              <div className="eyebrow">Bem-vindo ao seu banco</div>
+              <div className="login-apresentacao"><div className="eyebrow">Bem-vindo ao seu banco</div>
               <h1>
                 Seu dinheiro.
                 <br />
                 Do seu jeito.
               </h1>
               <p className="muted">
-                Entre para consultar e movimentar suas contas.
+                Tudo o que você precisa para movimentar suas contas e acompanhar cada transferência, em um só lugar.
               </p>
-              <Login aoEntrar={aoEntrar} ocupado={ocupado} />
+              <div className="cartao-decorativo" aria-hidden="true"><span>ICEI<b>Bank</b></span><Icone nome="banco" /><div className="cartao-linhas"><i /><i /><i /></div><small>SEU PRÓXIMO PASSO COMEÇA AQUI</small></div>
+              <div className="login-beneficios"><span><Icone nome="transferir" /> Transfira entre agências</span><span><Icone nome="historico" /> Acompanhe cada movimento</span></div>
+              </div><div className="login-formulario"><div className="eyebrow">Sua conta começa aqui</div>
+              <Login aoEntrar={aoEntrar} aoCadastrar={aoCadastrar} ocupado={ocupado} /><p className="login-nota">Selecione sua agência no topo para começar.</p></div>
             </div>
           ) : (
             <>
@@ -308,6 +320,7 @@ export default function App() {
                     : `Agência ${agencia}`}
                 </div>
                 <h1>{titulos[tela]}</h1>
+                <p className="muted">{tela === "resumo" ? "Uma visão clara das suas contas e dos seus próximos passos." : tela === "transferir" ? "Envie com clareza. Acompanhe até a confirmação do crédito." : tela === "historico" ? "Cada entrada, saída e atualização, em um só lugar." : "Preencha os dados abaixo para continuar."}</p>
               </div>
               <fieldset
                 className="operacoes"
@@ -317,13 +330,13 @@ export default function App() {
                 {tela === "resumo" && (
                   <>
                     {conta ? (
-                      <section className="saldo-card">
-                        <span>Saldo disponível</span>
+                      <div className="resumo-grid"><section className="saldo-card">
+                        <div className="saldo-topo"><span>Saldo disponível</span><Icone nome="banco" /></div>
                         <div className="saldo-valor">{moeda(conta.saldo)}</div>
-                        <p>Saldo da conta consultada</p>
+                        <p>Disponível para suas próximas movimentações</p>
                         <div className="acoes">
                           {[
-                            ["transferir", "Transferir ↗"],
+                            ["transferir", "Transferir"],
                             ["depositar", "Depositar"],
                             ["sacar", "Sacar"],
                           ].map(([id, texto]) => (
@@ -332,14 +345,14 @@ export default function App() {
                               key={id}
                               onClick={() => setTela(id)}
                             >
-                              {texto}
+                              <Icone nome={id} />{texto}
                             </button>
                           ))}
                         </div>
-                      </section>
+                      </section><section className="cartao conta-detalhes"><div className="eyebrow">Conta em uso</div><div className="avatar-conta">{conta.nomeAluno?.slice(0, 1).toUpperCase()}</div><h2>{conta.nomeAluno}</h2><dl><div><dt>Agência</dt><dd>{String(agencia).padStart(3, "0")}</dd></div><div><dt>Conta</dt><dd>{conta.id}</dd></div></dl><button className="ghost" type="button" onClick={() => setTela("historico")}>Ver movimentações <Icone nome="historico" /></button></section></div>
                     ) : (
                       <section className="cartao vazio">
-                        <h2>Vamos começar?</h2>
+                        <div className="icone-vazio"><Icone nome="banco" /></div><div className="eyebrow">Seu primeiro passo</div><h2>Vamos começar?</h2>
                         <p>
                           Consulte uma conta da Agência {agencia} ou crie sua
                           primeira conta.

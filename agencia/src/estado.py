@@ -5,8 +5,8 @@ Cada agência é o MESMO código, identificada pela variável de ambiente
 então ``relogio``, ``registro`` e ``contas`` são efetivamente singletons da
 agência.
 
-Não há banco de dados neste sprint (proposital: o foco é REST/MVC + relógio de
-vetorial). Reiniciar o processo zera as contas - é esperado.
+DATABASE_URL persiste somente usuários de login no Postgres.
+Contas e saldos sempre ficam em memória: reiniciar o processo zera as contas.
 """
 import os
 import threading

@@ -1,3 +1,4 @@
+import Icone from "./Icone.jsx";
 import { useEffect, useState } from "react";
 import { AGENCIAS } from "../api/cliente.js";
 import { consultarHistorico } from "../api/contas.js";
@@ -79,7 +80,8 @@ export default function HistoricoConta({
               className="movimentacao"
               key={`${e.sessaoProcesso || "legado"}-${e.sequencia || i}`}
             >
-              <div>
+              <span className={`movimento-icone ${alteraSaldo && !debito ? "entrada-valor" : ""}`}><Icone nome={debito ? "sacar" : alteraSaldo ? "depositar" : "historico"} /></span>
+              <div className="movimento-descricao">
                 <strong>{nomes[e.tipo]}</strong>
                 <div className="muted">
                   {new Date(e.horaParede).toLocaleString("pt-BR")}
@@ -94,7 +96,7 @@ export default function HistoricoConta({
                   </span>
                 )}
               </div>
-              <div className="valor-movimento">
+              <div className={`valor-movimento ${alteraSaldo && !debito ? "entrada-valor" : ""}`}>
                 {alteraSaldo
                   ? `${debito ? "−" : "+"} ${moeda(d.valor)}`
                   : e.tipo === "CRIAR_CONTA"

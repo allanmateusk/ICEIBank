@@ -53,8 +53,16 @@ _USUARIOS = {
 }
 
 
+def _registro(usuario: str) -> dict | None:
+    from .banco import ativo, buscar_usuario
+
+    if ativo():
+        return buscar_usuario(usuario)
+    return _USUARIOS.get(usuario)
+
+
 def autenticar(usuario: str, senha: str) -> bool:
-    reg = _USUARIOS.get(usuario)
+    reg = _registro(usuario)
     if reg is None:
         # Gasta o mesmo tempo mesmo com usuário inexistente (evita oráculo de timing).
         _hash_senha(senha, b"0" * 16)

@@ -54,6 +54,11 @@ class LoginIn(BaseModel):
     senha: str = Field(min_length=1)
 
 
+class CadastroIn(BaseModel):
+    usuario: str = Field(min_length=3, max_length=40, pattern=r"^[A-Za-z0-9._-]+$")
+    senha: str = Field(min_length=6, max_length=72)
+
+
 class EventoResultado(EventoCredito):
     tipo: Literal["CONFIRMAR"] = "CONFIRMAR"
     resultado: Literal["CREDITO_APLICADO", "CREDITO_FALHOU"]

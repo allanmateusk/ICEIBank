@@ -1,4 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 :root {
   font-family: Inter, system-ui, sans-serif;
   color: #edf4ef;
@@ -361,9 +360,11 @@ p {
 }
 .login {
   margin-top: 30px;
+  display: grid;
+  gap: 18px;
 }
 .login h2 {
-  margin-bottom: 22px;
+  margin-bottom: 4px;
 }
 .login .dica {
   font-size: 12px;
@@ -489,3 +490,119 @@ footer {
     scroll-behavior: auto !important;
   }
 }
+
+/* Identidade visual e composição das telas. */
+:root { --verde:#bcf36b; --painel:#171b19; --borda:#2b302d; --muted:#a4ada7; background:#101310; color:#f3f5f1; font-family:"Segoe UI",Inter,system-ui,sans-serif; }
+button { display:inline-flex; align-items:center; justify-content:center; gap:10px; border-radius:12px; transition:background .18s, transform .18s; }
+button:hover:not(:disabled) { transform:translateY(-1px); }
+button:disabled { cursor:not-allowed; }
+.icone { width:21px; height:21px; flex-shrink:0; }
+input,select { background:#111512; border-color:#394039; border-radius:11px; padding:14px 15px; }
+input:hover,select:hover { border-color:#65725e; }
+input:focus,select:focus { border-color:var(--verde); }
+h1 { font-size:36px; letter-spacing:-1.4px; font-weight:600; margin-bottom:12px; }
+h2 { letter-spacing:-.45px; }
+.eyebrow { font-size:10px; font-weight:600; letter-spacing:2px; }
+.app { grid-template-columns:238px minmax(0,1fr); }
+.sidebar { padding:36px 20px 26px; background:#131713; position:sticky; top:0; height:100dvh; }
+.marca { display:flex; align-items:center; padding:0 6px; font-size:25px; letter-spacing:-1.1px; }
+.marca-simbolo { display:grid; place-items:center; width:36px; height:36px; margin-right:9px; border:1px solid #4b5b39; border-radius:11px; background:#202b18; }
+.marca-sub { padding:12px 6px 48px; font-size:11px; }
+.sidebar nav { gap:8px; }
+.nav-item { justify-content:flex-start; gap:14px; min-height:49px; padding:13px 16px; }
+.nav-item[aria-current="page"] { background:#25321c; color:var(--verde); border:1px solid #3f532c; }
+.nav-secundario { border-top:0; border-radius:12px; margin-top:25px; }
+.sidebar-rodape { display:grid; gap:9px; padding:22px 12px; margin-top:auto; border-top:1px solid var(--borda); }
+.sidebar-rodape .icone { color:var(--verde); margin-bottom:6px; }
+.sidebar-rodape strong { color:#dbe4d4; font-weight:500; }
+.sidebar-rodape span,.sidebar-rodape small { font-size:11px; }
+.sidebar-rodape small { margin-top:24px; color:#89928b; }
+.topbar { padding:21px 44px; min-height:88px; background:#101310; }
+.topbar>.muted { font-size:13px; }
+.ferramentas select { padding:9px 34px 9px 13px; background:#1b211a; }
+.ghost:hover { background:#252c23; }
+.conteudo main { max-width:1240px; padding:40px 44px 48px; min-height:calc(100dvh - 145px); }
+.page-header { margin-bottom:30px; }
+.page-header>p { font-size:13px; margin-bottom:0; }
+.cartao { padding:30px; border-radius:18px; background:#171b19; box-shadow:0 8px 28px #0000000c; }
+.operacoes>.cartao:not(.historico):not(.vazio) { max-width:800px; }
+.cartao form { gap:23px; max-width:none; }
+.cartao form>button { justify-self:start; min-width:180px; }
+.cartao form>button.full { justify-self:stretch; }
+.form-grid { column-gap:24px; }
+label { font-size:12px; font-weight:500; gap:9px; }
+.resumo-grid { display:grid; grid-template-columns:minmax(0,1.7fr) minmax(240px,1fr); gap:22px; margin-bottom:26px; }
+.resumo-grid>section { margin:0; }
+.saldo-card { position:relative; overflow:hidden; padding:30px; background:radial-gradient(ellipse at 110% 0,#d9ff9b 0,transparent 65%),#bcf36b; color:#182510; display:flex; flex-direction:column; min-width:0; }
+.saldo-topo { display:flex; align-items:center; justify-content:space-between; font-size:13px; font-weight:500; }
+.saldo-topo .icone { width:27px; height:27px; opacity:.65; }
+.saldo-valor { font-size:clamp(32px,3.6vw,54px); font-weight:500; margin:29px 0 6px; overflow-wrap:anywhere; }
+.saldo-card p { font-size:12px; color:#3c522c; margin-bottom:30px; }
+.saldo-card .acoes { margin-top:auto; gap:8px; }
+.saldo-card button { background:#203119; border-color:#203119; font-size:12px; padding:11px 15px; }
+.saldo-card button:not(:first-child) { background:transparent; border-color:#648448; color:#203119; }
+.conta-detalhes { display:flex; flex-direction:column; align-items:flex-start; padding:25px; }
+.avatar-conta { display:grid; place-items:center; width:45px; height:45px; border:1px solid #47533c; color:var(--verde); background:#26301e; border-radius:50%; margin:19px 0 10px; font-size:19px; }
+.conta-detalhes h2 { font-size:17px; overflow-wrap:anywhere; }
+.conta-detalhes dl { display:flex; gap:40px; margin:0 0 20px; }
+.conta-detalhes dt { font-size:11px; color:var(--muted); }
+.conta-detalhes dd { margin:5px 0 0; font-size:14px; font-variant-numeric:tabular-nums; }
+.conta-detalhes button { width:100%; font-size:12px; margin-top:auto; }
+.historico h2 { font-size:17px; margin-bottom:12px; }
+.movimentacao { gap:15px; padding:20px 0; }
+.movimento-icone { display:grid; place-items:center; width:42px; height:42px; border-radius:13px; background:#232a24; color:#bcc5bf; flex-shrink:0; }
+.movimento-descricao { flex:1; min-width:0; }
+.movimento-descricao strong { font-size:13px; font-weight:500; }
+.movimentacao .muted { font-size:11px; }
+.valor-movimento { font-weight:500; font-size:14px; }
+.entrada-valor { color:var(--verde); }
+.badge { margin-top:7px; font-size:10px; border-radius:6px; }
+.vazio { padding:48px; background:radial-gradient(ellipse at 100% 0,#26341b,transparent 60%),#171b19; }
+.icone-vazio { display:grid; place-items:center; width:64px; height:64px; border:1px solid #4a6133; background:#27371c; border-radius:18px; color:var(--verde); margin-bottom:24px; }
+.icone-vazio .icone { width:30px; height:30px; }
+.vazio h2 { font-size:30px; margin:12px 0; }
+.vazio p { max-width:440px; color:var(--muted); margin-bottom:25px; }
+.revisao { background:#1d2619; padding:24px; border:1px solid #3e5130; border-radius:14px; }
+.etapas { display:grid; gap:0; }
+.etapas li { position:relative; padding-left:28px; }
+.etapas li:before { content:""; position:absolute; width:10px; height:10px; border-radius:50%; background:#536048; left:-6px; top:18px; box-shadow:0 0 0 5px #171b19; }
+.etapas li.concluida:before { background:var(--verde); }
+footer { color:#89928b; font-size:11px; padding:18px 44px; }
+.entrada { grid-template-columns:1fr; }
+.entrada .sidebar { height:auto; position:absolute; top:24px; left:40px; padding:0; border:0; background:transparent; z-index:1; }
+.entrada .marca-sub,.entrada .sidebar-rodape { display:none; }
+.entrada .topbar { justify-content:flex-end; border:0; background:transparent; }
+.entrada .topbar>.muted { display:none; }
+.entrada .conteudo { background:radial-gradient(ellipse at 15% 65%,#25351b55,transparent 55%); }
+.entrada .conteudo main { max-width:1200px; padding-top:50px; }
+.login-area { max-width:none; display:grid; grid-template-columns:1.15fr 1fr; gap:100px; margin:10px auto 40px; align-items:center; }
+.login-apresentacao>.eyebrow { color:var(--verde); margin-bottom:24px; }
+.login-area h1 { font-size:clamp(42px,4.6vw,64px); line-height:1.08; letter-spacing:-2.8px; margin-bottom:24px; }
+.login-apresentacao>p { max-width:375px; font-size:15px; line-height:1.8; }
+.login-formulario { padding:34px; border:1px solid #343d30; border-radius:24px; background:#191e18; }
+.login { border:0; background:transparent; box-shadow:none; margin:20px 0 0; padding:0; gap:23px; }
+.login h2 { font-size:27px; }
+.login-nota { color:var(--muted); font-size:11px; margin:25px 0 0; text-align:center; }
+.cartao-decorativo { width:300px; height:174px; max-width:100%; margin:35px 0; padding:23px; border:1px solid #6b844c; border-radius:18px; transform:rotate(-5deg); background:linear-gradient(125deg,#40552d,#23321b 65%,#566a3d); box-shadow:14px 20px 0 -6px #161f1280,0 20px 40px #0003; display:flex; flex-wrap:wrap; justify-content:space-between; }
+.cartao-decorativo>span { font-size:20px; letter-spacing:-1px; }
+.cartao-decorativo b { color:var(--verde); }
+.cartao-decorativo small { font-size:8px; letter-spacing:2px; color:#c4d3b3; }
+.cartao-linhas { width:100%; display:flex; gap:8px; align-items:center; }
+.cartao-linhas i { display:block; width:30px; height:5px; border-radius:3px; background:#b4c99555; }
+.login-beneficios { display:grid; gap:13px; color:#c2cbbd; font-size:12px; }
+.login-beneficios span { display:flex; gap:12px; align-items:center; }
+.login-beneficios .icone { color:var(--verde); width:17px; }
+@media(min-width:1600px) { .conteudo main { padding-top:55px; } }
+@media(max-width:1050px) { .app { grid-template-columns:190px minmax(0,1fr); } .entrada { display:block; } .conteudo main { padding:30px; } .topbar { padding:20px 30px; } .resumo-grid { grid-template-columns:1fr; } .conta-detalhes { display:none; } .login-area { gap:40px; } .login-formulario { padding:26px; } }
+@media(max-width:700px) {
+ .app { display:block; } .sidebar { height:auto; position:static; padding:20px 18px 14px; border-right:0; border-bottom:1px solid var(--borda); }
+ .marca { font-size:23px; } .marca-sub,.sidebar-rodape { display:none; } .sidebar nav { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; margin-top:22px; }
+ .nav-item { flex-direction:column; font-size:10px; padding:9px 2px; gap:6px; min-height:60px; text-align:center; } .nav-secundario { margin:0; }
+ .topbar { padding:15px 18px; gap:12px; } .topbar>.muted { display:none; } .ferramentas { width:100%; gap:8px; } .ferramentas .ghost { margin-left:auto; } .ferramentas label { font-size:11px; }
+ .conteudo main { padding:26px 18px; } h1 { font-size:29px; } .page-header>p { font-size:12px; } .page-header { margin-bottom:24px; }
+ .cartao,.saldo-card { padding:23px; border-radius:16px; } .saldo-valor { font-size:38px; } .saldo-card .acoes { gap:6px; } .saldo-card button { padding:10px; font-size:11px; gap:6px; } .saldo-card .icone { width:17px; }
+ .form-grid { grid-template-columns:1fr; } .cartao form>button { width:100%; } .movimentacao { gap:10px; flex-wrap:nowrap; } .movimento-icone { width:32px; height:32px; border-radius:10px; } .movimento-icone .icone { width:17px; } .movimento-descricao strong { font-size:12px; } .valor-movimento { font-size:12px; white-space:normal; text-align:right; max-width:100px; } .movimentacao .muted { font-size:10px; }
+ footer { padding:18px; font-size:10px; } .entrada .sidebar { position:static; padding:24px 18px 0; } .entrada .topbar { padding:16px 18px; } .entrada .ferramentas { justify-content:flex-start; } .entrada .conteudo main { padding-top:18px; }
+ .login-area { grid-template-columns:1fr; gap:28px; margin:0; } .login-area h1 { font-size:43px; letter-spacing:-1.8px; } .login-apresentacao>.eyebrow { margin-bottom:15px; } .login-apresentacao>p { font-size:13px; margin-bottom:0; } .cartao-decorativo,.login-beneficios { display:none; } .login-formulario { padding:25px; } .login { padding:0; } .login h2 { font-size:23px; }
+}
+@media(prefers-reduced-motion:reduce) { button:hover:not(:disabled) { transform:none; } }

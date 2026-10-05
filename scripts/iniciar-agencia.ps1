@@ -6,6 +6,9 @@ $env:OFFSET = [string]$Offset
 if (-not $env:RABBITMQ_URL) {
     $env:RABBITMQ_URL = 'amqp://iceibank:iceibank-dev@127.0.0.1:5678/'
 }
+if (-not $env:DATABASE_URL) {
+    $env:DATABASE_URL = 'postgresql://iceibank:iceibank-dev@127.0.0.1:5434/iceibank'
+}
 Write-Host "Agencia $Agencia na porta $(4000 + $Offset + $Agencia)"
 Get-Date
 Push-Location (Join-Path $repo 'agencia')

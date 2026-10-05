@@ -22,6 +22,13 @@ router = APIRouter()
 
 # ---- Autenticação (aberta) ----
 router.add_api_route("/auth/login", auth_controller.login, methods=["POST"], tags=["auth"])
+router.add_api_route(
+    "/auth/cadastro",
+    auth_controller.cadastro,
+    methods=["POST"],
+    status_code=201,
+    tags=["auth"],
+)
 
 # ---- Contas (exigem token de usuário) ----
 _usuario = [Depends(requer_token)]

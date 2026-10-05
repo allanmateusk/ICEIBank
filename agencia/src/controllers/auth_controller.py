@@ -4,8 +4,20 @@ POST /auth/login: recebe usuário + senha; se válidos, devolve um JWT.
 """
 from fastapi import HTTPException
 
-from ..esquemas import LoginIn
+from ..banco import ativo, inserir_usuario
+from ..esquemas import CadastroIn, LoginIn
 from ..seguranca import JWT_EXPIRACAO_MIN, autenticar, criar_token
+
+
+def cadastro(dados: CadastroIn) -> dict:
+    if not ativo():
+        raise HTTPException(
+            503,
+            "Banco de dados indisponivel. Suba o Postgres antes de criar usuarios.",
+        )
+    if not inserir_usuario(dados.usuario, dados.senha):
+        raise HTTPException(409, "Usuario ja existe.")
+    return {"usuario": dados.usuario}
 
 
 def login(dados: LoginIn) -> dict:

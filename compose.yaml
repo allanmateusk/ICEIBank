@@ -15,5 +15,93 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "127.0.0.1:5434:5432"
+    environment:
+      POSTGRES_USER: iceibank
+      POSTGRES_PASSWORD: iceibank-dev
+      POSTGRES_DB: iceibank
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iceibank -d iceibank"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  agencia-0: &agencia
+    build:
+      context: ./agencia
+    environment: &agencia-env
+      RABBITMQ_URL: amqp://iceibank:iceibank-dev@rabbitmq:5672/
+      DATABASE_URL: postgresql://iceibank:iceibank-dev@postgres:5432/iceibank
+      AGENCIA_ID: "0"
+      PORT: "4000"
+    ports:
+      - "127.0.0.1:4000:4000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.environ['PORT']+'/', timeout=3)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 20s
+    restart: unless-stopped
+
+  agencia-1:
+    <<: *agencia
+    environment:
+      <<: *agencia-env
+      AGENCIA_ID: "1"
+      PORT: "4001"
+    ports:
+      - "127.0.0.1:4001:4001"
+
+  agencia-2:
+    <<: *agencia
+    environment:
+      <<: *agencia-env
+      AGENCIA_ID: "2"
+      PORT: "4002"
+    ports:
+      - "127.0.0.1:4002:4002"
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      - agencia-0
+      - agencia-1
+      - agencia-2
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:5173').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 15s
+    restart: unless-stopped
+
 volumes:
   rabbitmq-data:
+  postgres-data:
