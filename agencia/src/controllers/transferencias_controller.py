@@ -56,9 +56,12 @@ async def transferir(dados: TransferenciaIn, request: Request,
     except Exception as erro:
         status = "FALHA_PUBLICACAO" if isinstance(erro, (BrokerIndisponivel, PublicacaoRecusada)) else "PUBLICACAO_INCERTA"
         with estado.lock:
-            if operacao["status"] not in ("CONFIRMADA", "FALHOU"):
-                operacao.update(status=status, motivo="Debito aplicado; publicacao nao confirmada. Consulte o acompanhamento.")
-                estado.registro.registrar(status, estado.relogio.evento_local(), detalhes)
+            if operacao["status"] in ("CONFIRMADA", "FALHOU"):
+                # O resultado do destino prova que o pedido foi processado,
+                # mesmo se a confirmação de publicação se perdeu.
+                return _resposta(operacao)
+            operacao.update(status=status, motivo="Debito aplicado; publicacao nao confirmada. Consulte o acompanhamento.")
+            estado.registro.registrar(status, estado.relogio.evento_local(), detalhes)
             resposta = _resposta(operacao)
         raise HTTPException(502, resposta) from None
     with estado.lock:
@@ -84,6 +87,8 @@ def receber_credito(corpo: dict) -> dict:
         if anterior:
             if anterior["pedido"] != evento.model_dump(mode="json", exclude={"vetorEnvio"}):
                 raise ValueError("UUID de credito reutilizado com outro pedido.")
+            estado.registro.registrar("CREDITO_DUPLICADO", estado.relogio.ao_receber(evento.vetorEnvio),
+                                     {"transferenciaId": tid, "idOrigem": evento.idOrigem, "idDestino": evento.idDestino})
             return anterior.copy()
         vetor = estado.relogio.ao_receber(evento.vetorEnvio)
         conta = estado.contas.get(evento.idDestino)
@@ -126,6 +131,8 @@ def receber_confirmacao(corpo: dict):
             esperado = "CONFIRMADA" if evento.resultado == "CREDITO_APLICADO" else "FALHOU"
             if operacao["status"] != esperado:
                 raise ValueError("Confirmacao conflitante.")
+            estado.registro.registrar("CONFIRMACAO_DUPLICADA", estado.relogio.ao_receber(evento.vetorEnvio),
+                                     {"transferenciaId": tid, "idOrigem": evento.idOrigem, "idDestino": evento.idDestino})
             return
         vetor = estado.relogio.ao_receber(evento.vetorEnvio)
         detalhes = {"transferenciaId": tid, "idOrigem": evento.idOrigem,

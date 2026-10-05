@@ -6,8 +6,7 @@ controllers) e da autenticação (Parte F):
 - ``/auth/login`` é aberta;
 - as rotas de conta e ``/transferencias`` exigem um JWT de usuário
   (``Authorization: Bearer <token>``);
-- ``/contas/{id}/creditar-remoto`` é interna: exige um token de escopo
-  ``"interno"``, emitido por outra agência.
+- Créditos remotos e confirmações chegam exclusivamente pelo RabbitMQ.
 """
 from fastapi import APIRouter, Depends
 

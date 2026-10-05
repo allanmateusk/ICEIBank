@@ -109,6 +109,9 @@ class TransferenciasTest(unittest.IsolatedAsyncioTestCase):
                     "origemAgencia": 0, "destinoAgencia": 1, "vetorEnvio": [2, 0, 0]}
         receber_credito(mensagem)
         receber_credito(mensagem)
+        mensagem["vetorEnvio"] = [8, 2, 0]
+        receber_credito(mensagem)
+        self.assertEqual(estado.relogio.vetor[0], 8)
         self.assertEqual(estado.contas[301]["saldo"], 35)
         mensagem["valor"] = 30
         with self.assertRaises(ValueError):
@@ -150,3 +153,14 @@ class TransferenciasTest(unittest.IsolatedAsyncioTestCase):
                                                 "resultado": "CREDITO_APLICADO", "vetorEnvio": [2, 2, 0]})
         resposta = await transferir(TransferenciaIn(idOrigem=300, idDestino=301, valor=10), self.request(BrokerRapido()), None)
         self.assertEqual(resposta["status"], "CONFIRMADA")
+
+    async def test_resultado_destino_prevalece_sobre_timeout_do_publish(self):
+        class BrokerComAckPerdido(BrokerFake):
+            async def publicar(self, rota, evento):
+                resultado = {**evento, "tipo": "CONFIRMAR", "resultado": "CREDITO_APLICADO", "vetorEnvio": [2, 2, 0]}
+                controller.receber_confirmacao(resultado)
+                controller.receber_confirmacao({**resultado, "vetorEnvio": [9, 2, 0]})
+                raise TimeoutError()
+        resposta = await transferir(TransferenciaIn(idOrigem=300, idDestino=301, valor=10), self.request(BrokerComAckPerdido()), None)
+        self.assertEqual(resposta["status"], "CONFIRMADA")
+        self.assertEqual(estado.relogio.vetor[0], 10)

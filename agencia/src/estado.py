@@ -6,7 +6,7 @@ então ``relogio``, ``registro`` e ``contas`` são efetivamente singletons da
 agência.
 
 Não há banco de dados neste sprint (proposital: o foco é REST/MVC + relógio de
-Lamport). Reiniciar o processo zera as contas - é esperado.
+vetorial). Reiniciar o processo zera as contas - é esperado.
 """
 import os
 import threading

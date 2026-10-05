@@ -10,8 +10,10 @@ import subprocess
 import sys
 import time
 import unittest
+from datetime import timedelta
 from uuid import uuid4
 import httpx
+from src.seguranca import criar_token
 
 RAIZ = Path(__file__).resolve().parents[1]
 GESTOR = "http://127.0.0.1:15678/api"
@@ -122,6 +124,12 @@ class IntegracaoTest(unittest.TestCase):
         self.assertEqual(self.cliente.get(self.url(0) + "/contas/300", headers={"Authorization": "Bearer invalido"}).status_code, 401)
         self.assertEqual(self.chamada(0, "POST", "/transferencias", json={"idOrigem": 300, "idDestino": 300, "valor": 1}).status_code, 422)
         self.assertEqual(self.chamada(0, "POST", "/contas", json={"id": 304, "nomeAluno": "X", "saldoInicial": 0}).status_code, 400)
+        expirado = criar_token("allan", expira_em=timedelta(seconds=-60))
+        self.assertEqual(self.cliente.get(self.url(0) + "/contas/300", headers={"Authorization": "Bearer " + expirado}).status_code, 401)
+        self.assertEqual(self.chamada(0, "POST", "/contas/300/depositar", json={"valor": 2}).json()["saldo"], 77)
+        self.assertEqual(self.chamada(0, "POST", "/contas/300/sacar", json={"valor": 2}).json()["saldo"], 75)
+        self.assertEqual(self.chamada(0, "GET", "/contas/300/historico").status_code, 200)
+        self.assertEqual(self.chamada(0, "POST", "/contas/300/creditar-remoto", json={}).status_code, 404)
 
     def test_03_offline_e_conta_perdida(self):
         self.criar(304, 20)
