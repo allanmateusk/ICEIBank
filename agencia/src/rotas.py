@@ -17,7 +17,7 @@ from .controllers import (
     historico_controller,
     transferencias_controller,
 )
-from .seguranca import requer_token, requer_token_interno
+from .seguranca import requer_token
 
 router = APIRouter()
 
@@ -70,12 +70,5 @@ router.add_api_route(
     transferencias_controller.transferir,
     methods=["POST"],
     dependencies=_usuario,
-    tags=["transferencias"],
-)
-router.add_api_route(
-    "/contas/{id_conta}/creditar-remoto",
-    transferencias_controller.creditar_remoto,
-    methods=["POST"],
-    dependencies=[Depends(requer_token_interno)],
     tags=["transferencias"],
 )

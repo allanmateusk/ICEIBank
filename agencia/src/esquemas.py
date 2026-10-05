@@ -4,23 +4,25 @@ Os nomes dos campos seguem o roteiro (camelCase) para casar com o JSON usado
 nos exemplos de teste. As restrições (`Field(...)`, validadores) rejeitam
 entradas inválidas com HTTP 422 antes de chegar ao controller.
 """
-from pydantic import BaseModel, Field, model_validator
+from typing import Literal
+from uuid import UUID
+from pydantic import BaseModel, Field, StrictInt, ConfigDict, model_validator
 
 
 class CriarContaIn(BaseModel):
     id: int = Field(ge=0, description="Número da conta (inteiro >= 0).")
     nomeAluno: str = Field(min_length=1)
-    saldoInicial: float = Field(default=0, ge=0)
+    saldoInicial: float = Field(default=0, ge=0, allow_inf_nan=False, multiple_of=0.01)
 
 
 class ValorIn(BaseModel):
-    valor: float = Field(gt=0, description="Valor da operação, sempre positivo.")
+    valor: float = Field(gt=0, allow_inf_nan=False, multiple_of=0.01)
 
 
 class TransferenciaIn(BaseModel):
     idOrigem: int = Field(ge=0)
     idDestino: int = Field(ge=0)
-    valor: float = Field(gt=0)
+    valor: float = Field(gt=0, allow_inf_nan=False, multiple_of=0.01)
 
     @model_validator(mode="after")
     def _contas_diferentes(self):
@@ -29,10 +31,22 @@ class TransferenciaIn(BaseModel):
         return self
 
 
-class CreditarRemotoIn(BaseModel):
-    valor: float = Field(gt=0)
-    timestampLamport: int
-    origemAgencia: int
+class EventoCredito(TransferenciaIn):
+    model_config = ConfigDict(extra="forbid")
+    tipo: Literal["CREDITAR"] = "CREDITAR"
+    versao: Literal[1] = 1
+    transferenciaId: UUID
+    origemAgencia: int = Field(ge=0, le=2)
+    destinoAgencia: int = Field(ge=0, le=2)
+    vetorEnvio: list[StrictInt] = Field(min_length=3, max_length=3)
+
+    @model_validator(mode="after")
+    def _particao(self):
+        if self.idOrigem % 3 != self.origemAgencia or self.idDestino % 3 != self.destinoAgencia:
+            raise ValueError("Particao da mensagem invalida.")
+        if self.origemAgencia == self.destinoAgencia or any(n < 0 for n in self.vetorEnvio):
+            raise ValueError("Agencias ou vetor invalidos.")
+        return self
 
 
 class LoginIn(BaseModel):

@@ -8,16 +8,31 @@ Rodar cada agência com um AGENCIA_ID diferente:
 
 Docs interativas: http://localhost:400X/docs
 """
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import estado
 from .rotas import router
+from .controllers.transferencias_controller import consumir
+from .services.mensageria import Mensageria
+
+
+@asynccontextmanager
+async def lifespan(app):
+    broker = Mensageria(estado.ID_AGENCIA, consumir)
+    app.state.mensageria = broker
+    await broker.iniciar()
+    try:
+        yield
+    finally:
+        await broker.fechar()
 
 app = FastAPI(
     title=f"ICEIBank - Agencia {estado.ID_AGENCIA}",
-    description="Sprint 1 - API REST/MVC com relogio de Lamport",
-    version="1.0.0",
+    description="Sprint 2 - RabbitMQ, relogio vetorial e confirmacao de credito",
+    version="2.0.0",
+    lifespan=lifespan,
 )
 
 # CORS: o frontend (Vite) roda em http://localhost:5173 e chama esta API em
