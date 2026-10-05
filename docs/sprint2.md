@@ -7,10 +7,10 @@ O espaço do timestamp e o custo de merge/comparação crescem linearmente com o
 número de processos. Para dez agências isso é pequeno; em sistemas com muitos
 participantes, tráfego e metadados podem exigir outra estratégia de representação.
 
-**2. `[3,1,0]` e `[3,2,0]`.** O primeiro acontece antes: cada posição do primeiro
+**2.** `[3,1,0]` **e** `[3,2,0]`**.** O primeiro acontece antes: cada posição do primeiro
 é menor ou igual à correspondente do segundo e ao menos uma é menor.
 
-**3. `[3,1,0]` e `[1,3,0]`.** São concorrentes: o primeiro é maior na posição 0,
+**3.** `[3,1,0]` **e** `[1,3,0]`**.** São concorrentes: o primeiro é maior na posição 0,
 mas menor na 1; nenhum vetor domina o outro.
 
 A implementação retorna snapshots por cópia e protege o relógio com lock.
@@ -109,10 +109,5 @@ incluindo data executada pelo PowerShell. Os demais PNGs são capturas da aplica
 Para atender a uma exigência de screenshot de terminal nativo, reproduza o
 procedimento do README das evidências e capture os terminais com `Get-Date`.
 
-## Uso de IA
 
-Codex/OpenAI foi utilizado para apoiar planejamento, protótipos, implementação,
-revisão e testes automatizados. O trabalho precisa ser estudado e explicado pelo
-aluno: regras do vetor, routing keys, durabilidade, ack, publisher confirm,
-confirmação de negócio, idempotência e limites do estado em memória. Este apoio
-não substitui a compreensão nem afirma defesa oral já realizada.
+
