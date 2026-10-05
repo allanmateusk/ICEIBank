@@ -1,126 +1,165 @@
-"""Controller de transferências (MVC: Controller).
-
-- Transferência LOCAL (origem e destino na mesma agência): débito e crédito são
-  dois eventos locais - relógio de Lamport com ``evento_local()``.
-- Transferência ENTRE AGÊNCIAS: o débito é local; o crédito vira uma mensagem
-  REST para a agência de destino. Aí entram as regras 2 e 3 de Lamport
-  (``ao_enviar()`` no remetente, ``ao_receber()`` no destinatário).
-
-LIMITAÇÃO CONHECIDA: se a chamada à agência de destino falhar (agência fora do
-ar, rede caiu), o débito já aplicado NÃO é revertido - o dinheiro "some"
-temporariamente. Garantir atomicidade sob falha é assunto do Sprint 4
-(transação distribuída: 2PC ou Saga). Por enquanto apenas registramos a
-inconsistência no log, com o evento ``TRANSFERENCIA_FALHOU``.
-"""
-import httpx
-from fastapi import HTTPException
-
-from .. import config
-from ..esquemas import CreditarRemotoIn, TransferenciaIn
-from ..estado import ID_AGENCIA, contas, registro, relogio
-from ..seguranca import criar_token_interno
+"""Transferências locais e remotas; a publicação não confirma o crédito."""
+from uuid import UUID, uuid4
+from fastapi import Header, HTTPException, Request
+from .. import config, estado
+from ..esquemas import EventoCredito, EventoResultado, TransferenciaIn
+from ..services.mensageria import BrokerIndisponivel, PublicacaoRecusada
 
 
-def transferir(dados: TransferenciaIn) -> dict:
-    conta_origem = contas.get(dados.idOrigem)
-    if conta_origem is None:
-        raise HTTPException(404, "Conta de origem nao encontrada nesta agencia.")
-    if conta_origem["saldo"] < dados.valor:
-        raise HTTPException(400, "Saldo insuficiente.")
-
-    agencia_destino = config.agencia_responsavel(dados.idDestino)
-
-    # O débito é SEMPRE local: esta agência é a dona da conta de origem.
-    ts_debito = relogio.evento_local()
-    conta_origem["saldo"] -= dados.valor
-    registro.registrar(
-        "TRANSFERENCIA_DEBITO",
-        ts_debito,
-        {"idOrigem": dados.idOrigem, "idDestino": dados.idDestino, "valor": dados.valor},
-    )
-
-    # ---- Caso 1: mesma agência - credita direto (outro evento local) ----
-    if agencia_destino == ID_AGENCIA:
-        conta_destino = contas.get(dados.idDestino)
-        if conta_destino is None:
-            conta_origem["saldo"] += dados.valor  # desfaz o débito
-            registro.registrar(
-                "TRANSFERENCIA_DESFEITA",
-                relogio.evento_local(),
-                {"motivo": "conta de destino inexistente", "idDestino": dados.idDestino},
-            )
-            raise HTTPException(404, "Conta de destino nao encontrada.")
-
-        ts_credito = relogio.evento_local()
-        conta_destino["saldo"] += dados.valor
-        registro.registrar(
-            "TRANSFERENCIA_CREDITO",
-            ts_credito,
-            {"idOrigem": dados.idOrigem, "idDestino": dados.idDestino, "valor": dados.valor},
-        )
-        return {
-            "mensagem": "Transferencia concluida (mesma agencia).",
-            "saldoOrigem": conta_origem["saldo"],
-            "saldoDestino": conta_destino["saldo"],
-        }
-
-    # ---- Caso 2: entre agências - chama a agência de destino via REST ----
-    ts_envio = relogio.ao_enviar()  # regra 2: incrementa e anexa à mensagem
-    url_destino = config.url_agencia(agencia_destino)
-    # Chamada agência-a-agência: token de escopo "interno", não o token do
-    # usuário final (ver justificativa em RESPOSTAS.md - Parte F).
-    cabecalhos = {"Authorization": f"Bearer {criar_token_interno(f'agencia-{ID_AGENCIA}')}"}
+def _id(chave):
     try:
-        resposta = httpx.post(
-            f"{url_destino}/contas/{dados.idDestino}/creditar-remoto",
-            json={
-                "valor": dados.valor,
-                "timestampLamport": ts_envio,
-                "origemAgencia": ID_AGENCIA,
-            },
-            headers=cabecalhos,
-            timeout=5.0,
-        )
-        resposta.raise_for_status()
-    except httpx.HTTPError as erro:
-        # LIMITAÇÃO CONHECIDA (Sprint 4): o débito acima NÃO é revertido.
-        registro.registrar(
-            "TRANSFERENCIA_FALHOU",
-            relogio.evento_local(),
-            {
-                "idOrigem": dados.idOrigem,
-                "idDestino": dados.idDestino,
-                "valor": dados.valor,
-                "erro": str(erro),
-            },
-        )
-        raise HTTPException(
-            502,
-            "Falha ao contatar agencia de destino. Debito ja aplicado - "
-            "inconsistencia conhecida (ver Sprint 4).",
-        )
-
-    corpo = resposta.json()
-    return {
-        "mensagem": "Transferencia concluida (entre agencias).",
-        "saldoOrigem": conta_origem["saldo"],
-        "saldoDestinoRemoto": corpo.get("saldoAtual"),
-    }
+        return str(UUID(chave)) if chave else str(uuid4())
+    except ValueError:
+        raise HTTPException(422, "Idempotency-Key deve ser um UUID.") from None
 
 
-def creditar_remoto(id_conta: int, dados: CreditarRemotoIn) -> dict:
-    # Regra 3 de Lamport: ao RECEBER mensagem de outra agência, ajusta o relógio
-    # para max(contador_local, timestamp_recebido) + 1.
-    ts = relogio.ao_receber(dados.timestampLamport)
+async def transferir(dados: TransferenciaIn, request: Request,
+                     chave: str | None = Header(default=None, alias="Idempotency-Key")) -> dict:
+    tid = _id(chave)
+    destino = config.agencia_responsavel(dados.idDestino)
+    broker = request.app.state.mensageria
+    with estado.lock:
+        anterior = estado.transferencias.get(tid)
+        if anterior:
+            if anterior["pedido"] != dados.model_dump():
+                raise HTTPException(409, "Chave ja utilizada com outra transferencia.")
+            return _resposta(anterior)
+        origem = estado.contas.get(dados.idOrigem)
+        if origem is None:
+            raise HTTPException(404, "Conta de origem nao encontrada nesta agencia.")
+        if origem["saldo"] < dados.valor:
+            raise HTTPException(400, "Saldo insuficiente.")
+        conta_destino = estado.contas.get(dados.idDestino) if destino == estado.ID_AGENCIA else None
+        if destino == estado.ID_AGENCIA and conta_destino is None:
+            raise HTTPException(404, "Conta de destino nao encontrada.")
+        if destino != estado.ID_AGENCIA and not broker.disponivel:
+            raise HTTPException(503, "Broker indisponivel. Nenhum debito foi aplicado.")
+        operacao = {"transferenciaId": tid, **dados.model_dump(), "pedido": dados.model_dump(),
+                    "status": "PUBLICANDO", "destinoAgencia": destino}
+        estado.transferencias[tid] = operacao
+        origem["saldo"] = round(origem["saldo"] - dados.valor, 2)
+        operacao["saldoOrigem"] = origem["saldo"]
+        detalhes = {"transferenciaId": tid, **dados.model_dump()}
+        estado.registro.registrar("TRANSFERENCIA_DEBITO", estado.relogio.evento_local(), detalhes)
+        if conta_destino is not None:
+            conta_destino["saldo"] = round(conta_destino["saldo"] + dados.valor, 2)
+            estado.registro.registrar("TRANSFERENCIA_CREDITO", estado.relogio.evento_local(), detalhes)
+            operacao.update(status="CONFIRMADA", saldoDestino=conta_destino["saldo"])
+            return _resposta(operacao)
+        evento = {"tipo": "CREDITAR", "versao": 1, **detalhes,
+                  "origemAgencia": estado.ID_AGENCIA, "destinoAgencia": destino,
+                  "vetorEnvio": estado.relogio.ao_enviar()}
+        estado.registro.registrar("TRANSFERENCIA_ENVIADA", evento["vetorEnvio"], detalhes)
+    # Nenhum lock de thread atravessa o await de rede.
+    try:
+        await broker.publicar(f"agencia.{destino}.creditar", evento)
+    except Exception as erro:
+        status = "FALHA_PUBLICACAO" if isinstance(erro, (BrokerIndisponivel, PublicacaoRecusada)) else "PUBLICACAO_INCERTA"
+        with estado.lock:
+            if operacao["status"] in ("CONFIRMADA", "FALHOU"):
+                # O resultado do destino prova que o pedido foi processado,
+                # mesmo se a confirmação de publicação se perdeu.
+                return _resposta(operacao)
+            operacao.update(status=status, motivo="Debito aplicado; publicacao nao confirmada. Consulte o acompanhamento.")
+            estado.registro.registrar(status, estado.relogio.evento_local(), detalhes)
+            resposta = _resposta(operacao)
+        raise HTTPException(502, resposta) from None
+    with estado.lock:
+        if operacao["status"] == "PUBLICANDO":
+            operacao["status"] = "PENDENTE"
+        return _resposta(operacao)
 
-    conta = contas.get(id_conta)
-    if conta is None:
-        raise HTTPException(404, "Conta nao encontrada nesta agencia.")
 
-    conta["saldo"] += dados.valor
-    registro.registrar(
-        "TRANSFERENCIA_CREDITO_REMOTO",
-        ts,
-        {"idConta": id_conta, "valor": dados.valor, "origemAgencia": dados.origemAgencia},
-    )
-    return {"mensagem": "Credito remoto aplicado.", "saldoAtual": conta["saldo"]}
+def _resposta(operacao: dict) -> dict:
+    retorno = {k: v for k, v in operacao.items() if k != "pedido"}
+    retorno["mensagem"] = {"CONFIRMADA": "Credito confirmado.", "PENDENTE": "Mensagem publicada. Aguardando confirmacao do credito.",
+                            "PUBLICANDO": "Publicacao em andamento.", "FALHOU": "Credito nao aplicado no destino."}.get(operacao["status"], operacao.get("motivo", "Consulte o acompanhamento."))
+    return retorno
+
+
+def receber_credito(corpo: dict) -> dict:
+    evento = EventoCredito.model_validate(corpo)
+    if evento.destinoAgencia != estado.ID_AGENCIA:
+        raise ValueError("Mensagem entregue a agencia incorreta.")
+    tid = str(evento.transferenciaId)
+    with estado.lock:
+        anterior = estado.creditos_processados.get(tid)
+        if anterior:
+            if anterior["pedido"] != evento.model_dump(mode="json", exclude={"vetorEnvio"}):
+                raise ValueError("UUID de credito reutilizado com outro pedido.")
+            estado.registro.registrar("CREDITO_DUPLICADO", estado.relogio.ao_receber(evento.vetorEnvio),
+                                     {"transferenciaId": tid, "idOrigem": evento.idOrigem, "idDestino": evento.idDestino})
+            return anterior.copy()
+        vetor = estado.relogio.ao_receber(evento.vetorEnvio)
+        conta = estado.contas.get(evento.idDestino)
+        detalhes = {"transferenciaId": tid, "idOrigem": evento.idOrigem,
+                    "idDestino": evento.idDestino, "valor": evento.valor}
+        resultado = {**detalhes, "origemAgencia": evento.origemAgencia,
+                     "destinoAgencia": evento.destinoAgencia,
+                     "resultado": "CREDITO_APLICADO" if conta else "CREDITO_FALHOU",
+                     "pedido": evento.model_dump(mode="json", exclude={"vetorEnvio"})}
+        if conta:
+            conta["saldo"] = round(conta["saldo"] + evento.valor, 2)
+            tipo = "TRANSFERENCIA_CREDITO_REMOTO"
+        else:
+            resultado["motivo"] = "Conta nao encontrada no destino (estado em memoria perdido no reinicio)."
+            tipo = "CREDITO_REMOTO_FALHOU"
+        estado.creditos_processados[tid] = resultado
+        estado.registro.registrar(tipo, vetor, detalhes)
+        return resultado.copy()
+
+
+def consultar(transferencia_id: str) -> dict:
+    tid = _id(transferencia_id)
+    with estado.lock:
+        operacao = estado.transferencias.get(tid)
+        if not operacao:
+            raise HTTPException(404, "Acompanhamento nao encontrado nesta agencia. Pode ter sido perdido em um reinicio.")
+        return _resposta(operacao)
+
+
+def receber_confirmacao(corpo: dict):
+    evento = EventoResultado.model_validate(corpo)
+    if evento.origemAgencia != estado.ID_AGENCIA:
+        raise ValueError("Confirmacao entregue a agencia incorreta.")
+    tid = str(evento.transferenciaId)
+    with estado.lock:
+        operacao = estado.transferencias.get(tid)
+        if operacao and any(operacao[c] != getattr(evento, c) for c in ("idOrigem", "idDestino", "valor", "destinoAgencia")):
+            raise ValueError("Confirmacao nao corresponde a transferencia.")
+        if operacao and operacao["status"] in ("CONFIRMADA", "FALHOU"):
+            esperado = "CONFIRMADA" if evento.resultado == "CREDITO_APLICADO" else "FALHOU"
+            if operacao["status"] != esperado:
+                raise ValueError("Confirmacao conflitante.")
+            estado.registro.registrar("CONFIRMACAO_DUPLICADA", estado.relogio.ao_receber(evento.vetorEnvio),
+                                     {"transferenciaId": tid, "idOrigem": evento.idOrigem, "idDestino": evento.idDestino})
+            return
+        vetor = estado.relogio.ao_receber(evento.vetorEnvio)
+        detalhes = {"transferenciaId": tid, "idOrigem": evento.idOrigem,
+                    "idDestino": evento.idDestino, "valor": evento.valor, "resultado": evento.resultado}
+        if operacao:
+            operacao["status"] = "CONFIRMADA" if evento.resultado == "CREDITO_APLICADO" else "FALHOU"
+            if evento.motivo:
+                operacao["motivo"] = evento.motivo
+            tipo = "CONFIRMACAO_RECEBIDA"
+        else:
+            tipo = "CONFIRMACAO_SEM_REGISTRO"
+        estado.registro.registrar(tipo, vetor, detalhes)
+
+
+async def consumir(corpo: dict):
+    if corpo.get("tipo") == "CONFIRMAR":
+        receber_confirmacao(corpo)
+        return
+    resultado = receber_credito(corpo)
+    with estado.lock:
+        evento = {k: v for k, v in resultado.items() if k != "pedido"}
+        evento.update(tipo="CONFIRMAR", versao=1, vetorEnvio=estado.relogio.ao_enviar())
+        estado.registro.registrar("CONFIRMACAO_ENVIADA", evento["vetorEnvio"],
+                                 {k: v for k, v in evento.items() if k != "vetorEnvio"})
+    # Se esta publicação falhar, o crédito já está no cache. A reentrega
+    # repete somente a confirmação, sem reaplicar o crédito.
+    await broker_ativo.publicar(f"agencia.{evento['origemAgencia']}.confirmar", evento)
+
+
+broker_ativo = None

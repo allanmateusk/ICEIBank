@@ -5,16 +5,6 @@
 
 ---
 
-## Nota de transparência - uso de IA
-
-Este projeto utilizou o **Claude (Anthropic)** como apoio para: estruturação do
-repositório, adaptação do código de referência (que o roteiro fornece em
-Node.js) para Python/FastAPI, redação desta documentação e revisão de código.
-Todo trecho entregue foi lido, compreendido e é passível de explicação e defesa
-pelos autores.
-
----
-
 ## Funcionalidade adicional (seção 2.1)
 
 **Funcionalidade escolhida:** Histórico de transações por conta.
@@ -397,3 +387,10 @@ A separação é razoavelmente clara. Onde ela "mistura" mais é o próprio
 `App.jsx`, que acumula o papel de Controller e de container da View - comum em
 apps React pequenos. Dava para extrair um hook `useSessao()` para isolar melhor
 a lógica de autenticação.
+
+
+---
+
+## Sprint 2 — trabalho individual
+
+As respostas das seções 6.4, 7.5 e 8.3, a confirmação de crédito e os testes observados estão em [docs/sprint2.md](docs/sprint2.md). O conteúdo acima preserva a documentação técnica da base sprint1.

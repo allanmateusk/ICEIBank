@@ -1,76 +1,59 @@
-"""Linha do tempo unificada das 3 agências, ordenada pelo relógio de Lamport.
-
-Lê todos os ``data/eventos-*.jsonl`` e imprime um único fluxo de eventos
-ordenado por ``timestampLamport``. Rodar depois de gerar alguns eventos:
-
-    uv run python mesclar_logs.py
-
-Eventos com o MESMO ``timestampLamport`` vindos de agências diferentes são
-concorrentes: o relógio de Lamport, sozinho, não define ordem entre eles (é o
-que motiva o relógio vetorial do Sprint 2).
-"""
+"""Linha do tempo visual e relações causais (ordem de parede não é causal)."""
+import argparse
 import json
 import os
-import sys
+from pathlib import Path
+from src.services.relogio_vetorial import comparar_vetores, validar_vetor
 
-PASTA_DADOS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+
+def carregar_eventos(pasta: Path) -> list[dict]:
+    eventos = []
+    for arquivo in sorted(pasta.glob("eventos-*.jsonl")):
+        with arquivo.open(encoding="utf-8") as f:
+            eventos.extend(json.loads(linha) for linha in f if linha.strip())
+    return sorted(eventos, key=lambda e: e["horaParede"])
 
 
-def carregar_eventos() -> list[dict]:
-    eventos: list[dict] = []
-    if not os.path.isdir(PASTA_DADOS):
-        return eventos
-    for nome in sorted(os.listdir(PASTA_DADOS)):
-        if not (nome.startswith("eventos-") and nome.endswith(".jsonl")):
+def analisar(eventos: list[dict]) -> list[tuple[dict, dict]]:
+    sessoes = {}
+    for evento in eventos:
+        if "timestampVetorial" not in evento:
             continue
-        with open(os.path.join(PASTA_DADOS, nome), encoding="utf-8") as arquivo:
-            for linha in arquivo:
-                linha = linha.strip()
-                if linha:
-                    eventos.append(json.loads(linha))
-    return eventos
+        validar_vetor(evento["timestampVetorial"], 3)
+        sessoes.setdefault(evento["agencia"], set()).add(evento.get("sessaoProcesso", "desconhecida"))
+    if any(len(s) > 1 for s in sessoes.values()):
+        raise ValueError("Reinicio detectado: nao compare vetores de sessoes diferentes. Use um experimento continuo em pasta separada.")
+    novos = [e for e in eventos if "timestampVetorial" in e]
+    return [(a, b) for i, a in enumerate(novos) for b in novos[i + 1:]
+            if a["agencia"] != b["agencia"] and
+            comparar_vetores(a["timestampVetorial"], b["timestampVetorial"]) == "CONCORRENTES"]
 
 
-def main() -> None:
-    eventos = carregar_eventos()
-    if not eventos:
-        print(f"Nenhum evento encontrado em {PASTA_DADOS}")
-        print("Rode algumas operacoes nas agencias primeiro.")
-        sys.exit(0)
-
-    # Ordena por timestamp de Lamport. O desempate por nome de agência é
-    # arbitrario de proposito: eventos com o mesmo timestamp sao concorrentes e
-    # nenhuma ordem entre eles e "mais correta" que a outra.
-    eventos.sort(key=lambda e: (e["timestampLamport"], e["agencia"]))
-
-    # Marca os timestamps que aparecem em mais de um evento (candidatos a
-    # eventos concorrentes).
-    contagem: dict[int, int] = {}
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--pasta", type=Path, default=Path(os.environ.get("PASTA_DADOS", Path(__file__).parent / "data")))
+    parser.add_argument("--limite-pares", type=int, default=50)
+    args = parser.parse_args()
+    if args.limite_pares < 1:
+        parser.error("--limite-pares deve ser positivo")
+    eventos = carregar_eventos(args.pasta)
+    print("=== Linha do tempo por hora de parede (exibicao; nao define causalidade) ===")
     for e in eventos:
-        contagem[e["timestampLamport"]] = contagem.get(e["timestampLamport"], 0) + 1
-
-    print("=== Linha do tempo unificada (ordenada por relogio de Lamport) ===")
-    for e in eventos:
-        ts = e["timestampLamport"]
-        marca = "  <== timestamp repetido" if contagem[ts] > 1 else ""
-        detalhes = json.dumps(e["detalhes"], ensure_ascii=False)
-        print(
-            f"[Lamport {ts:>3}] ({e['horaParede']}) "
-            f"{e['agencia']:<10} {e['tipo']:<28} {detalhes}{marca}"
-        )
-
-    repetidos = sorted(ts for ts, n in contagem.items() if n > 1)
-    if repetidos:
-        print(
-            f"\nTimestamps de Lamport repetidos (eventos possivelmente "
-            f"concorrentes): {repetidos}"
-        )
-    else:
-        print(
-            "\nNenhum timestamp repetido nesta execucao. Gere mais eventos "
-            "concorrentes (operacoes independentes em agencias diferentes)."
-        )
+        vetor = e.get("timestampVetorial", "Lamport legado=" + str(e.get("timestampLamport")))
+        print(f"{e['agencia']} vetor={vetor} {e['tipo']} {json.dumps(e['detalhes'], ensure_ascii=False)}")
+    try:
+        pares = analisar(eventos)
+    except ValueError as erro:
+        print(f"Analise causal indisponivel: {erro}")
+        return 2
+    print("\n=== Pares CONCORRENTES entre agencias diferentes ===")
+    for a, b in pares[:args.limite_pares]:
+        print(f"{a['agencia']} {a['tipo']} {a['timestampVetorial']} x {b['agencia']} {b['tipo']} {b['timestampVetorial']}")
+    print(f"Total: {len(pares)} pares concorrentes; exibidos: {min(len(pares), args.limite_pares)}.")
+    if not pares:
+        print("Gere operacoes independentes em agencias distintas para observar concorrencia.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

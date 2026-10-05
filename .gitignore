@@ -30,3 +30,10 @@ desktop.ini
 # Editores
 .vscode/
 .idea/
+
+.env
+.env.local
+.env.*.local
+.tools/
+evidencias/sprint2/saidas/
+frontend/.browser-test/

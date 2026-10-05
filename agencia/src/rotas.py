@@ -6,8 +6,7 @@ controllers) e da autenticação (Parte F):
 - ``/auth/login`` é aberta;
 - as rotas de conta e ``/transferencias`` exigem um JWT de usuário
   (``Authorization: Bearer <token>``);
-- ``/contas/{id}/creditar-remoto`` é interna: exige um token de escopo
-  ``"interno"``, emitido por outra agência.
+- Créditos remotos e confirmações chegam exclusivamente pelo RabbitMQ.
 """
 from fastapi import APIRouter, Depends
 
@@ -17,12 +16,19 @@ from .controllers import (
     historico_controller,
     transferencias_controller,
 )
-from .seguranca import requer_token, requer_token_interno
+from .seguranca import requer_token
 
 router = APIRouter()
 
 # ---- Autenticação (aberta) ----
 router.add_api_route("/auth/login", auth_controller.login, methods=["POST"], tags=["auth"])
+router.add_api_route(
+    "/auth/cadastro",
+    auth_controller.cadastro,
+    methods=["POST"],
+    status_code=201,
+    tags=["auth"],
+)
 
 # ---- Contas (exigem token de usuário) ----
 _usuario = [Depends(requer_token)]
@@ -73,9 +79,6 @@ router.add_api_route(
     tags=["transferencias"],
 )
 router.add_api_route(
-    "/contas/{id_conta}/creditar-remoto",
-    transferencias_controller.creditar_remoto,
-    methods=["POST"],
-    dependencies=[Depends(requer_token_interno)],
-    tags=["transferencias"],
+    "/transferencias/{transferencia_id}", transferencias_controller.consultar,
+    methods=["GET"], dependencies=_usuario, tags=["transferencias"],
 )

@@ -1,41 +1,40 @@
-"""Registro de eventos de uma agência em arquivo ``.jsonl`` (uma linha JSON por
-evento). Esses arquivos são a matéria-prima da linha do tempo unificada
-(``mesclar_logs.py``, seção 10 do roteiro).
-
-Cada evento guarda dois carimbos de tempo:
-
-- ``timestampLamport``: o relógio lógico - usado para ordenar a linha do tempo;
-- ``horaParede``: o relógio físico da máquina, apenas para comparação. NÃO é
-  usado para nenhuma decisão do sistema.
-"""
+"""Eventos JSONL: vetor, sessão do processo e hora de parede para exibição."""
 import json
 import os
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
+from uuid import uuid4
 
 
 class RegistroEventos:
-    def __init__(self, nome_agencia: str) -> None:
+    def __init__(self, nome_agencia: str):
         self.nome_agencia = nome_agencia
-        pasta_dados = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "..", "..", "data"
-        )
-        os.makedirs(pasta_dados, exist_ok=True)
-        self.caminho_arquivo = os.path.join(
-            pasta_dados, f"eventos-{nome_agencia}.jsonl"
-        )
-        self._lock = threading.Lock()
+        pasta = Path(os.environ.get("PASTA_DADOS", Path(__file__).resolve().parents[2] / "data"))
+        pasta.mkdir(parents=True, exist_ok=True)
+        self.caminho_arquivo = str(pasta / f"eventos-{nome_agencia}.jsonl")
+        self.sessao = str(uuid4())
+        self._sequencia = 0
+        self._lock = threading.RLock()
 
-    def registrar(self, tipo: str, timestamp_lamport: int, detalhes: dict) -> dict:
-        evento = {
-            "agencia": self.nome_agencia,
-            "tipo": tipo,
-            "timestampLamport": timestamp_lamport,
-            "horaParede": datetime.now(timezone.utc).isoformat(),
-            "detalhes": detalhes,
-        }
+    def registrar(self, tipo: str, timestamp: list[int], detalhes: dict) -> dict:
         with self._lock:
+            self._sequencia += 1
+            evento = {
+                "agencia": self.nome_agencia, "sessaoProcesso": self.sessao,
+                "sequencia": self._sequencia, "tipo": tipo,
+                "timestampVetorial": list(timestamp),
+                "horaParede": datetime.now(timezone.utc).isoformat(), "detalhes": detalhes,
+            }
             with open(self.caminho_arquivo, "a", encoding="utf-8") as arquivo:
-                arquivo.write(json.dumps(evento, ensure_ascii=False) + "\n")
-        print(f"[Lamport {timestamp_lamport}] {tipo} {detalhes}")
-        return evento
+                arquivo.write(json.dumps(evento, ensure_ascii=False, allow_nan=False) + "\n")
+            print(f"[Vetor {timestamp}] {tipo} {detalhes}", flush=True)
+            return evento
+
+    def ler(self) -> list[dict]:
+        with self._lock:
+            try:
+                with open(self.caminho_arquivo, encoding="utf-8") as arquivo:
+                    return [json.loads(linha) for linha in arquivo if linha.strip()]
+            except FileNotFoundError:
+                return []
