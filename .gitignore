@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# uv
+.uv/
+
+# Conteúdo de runtime das agências (logs .jsonl, saída dos processos .out).
+# A pasta é versionada só pelo README.
+agencia/data/*
+!agencia/data/README.md
+
+# Saídas de texto geradas pelos scripts de demo (o que entra na entrega é o .png)
+evidencias/sprint1/saidas/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editores
+.vscode/
+.idea/
