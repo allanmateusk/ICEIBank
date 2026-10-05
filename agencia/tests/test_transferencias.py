@@ -9,6 +9,7 @@ from src import estado
 from src.esquemas import TransferenciaIn
 from src.controllers.transferencias_controller import transferir, receber_credito
 from src.controllers import transferencias_controller as controller
+from src.controllers.historico_controller import historico
 from src.services.registro_eventos import RegistroEventos
 from src.services.relogio_vetorial import RelogioVetorial
 from src.services.mensageria import PublicacaoRecusada
@@ -75,6 +76,11 @@ class TransferenciasTest(unittest.IsolatedAsyncioTestCase):
         resultados = await asyncio.gather(operar(), operar())
         self.assertEqual(sum(isinstance(r, dict) for r in resultados), 1)
         self.assertEqual(estado.contas[300]["saldo"], 30)
+
+    async def test_historico_local_separa_debito_e_credito(self):
+        await transferir(TransferenciaIn(idOrigem=300, idDestino=303, valor=5), self.request(), None)
+        self.assertEqual([e["tipo"] for e in historico(300)["eventos"]], ["TRANSFERENCIA_DEBITO"])
+        self.assertEqual([e["tipo"] for e in historico(303)["eventos"]], ["TRANSFERENCIA_CREDITO"])
 
     async def test_remota_pendente_e_idempotente(self):
         broker = BrokerFake()
