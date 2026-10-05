@@ -100,12 +100,21 @@ class IntegracaoTest(unittest.TestCase):
             time.sleep(0.05)
         self.fail(f"Saldo {saldo} nao observado na conta {conta}: {resposta.text}")
 
+    def esperar_status(self, tid, esperado):
+        for _ in range(100):
+            resposta = self.chamada(0, "GET", f"/transferencias/{tid}")
+            if resposta.status_code == 200 and resposta.json()["status"] == esperado:
+                return resposta.json()
+            time.sleep(0.05)
+        self.fail(f"Status {esperado} nao observado: {resposta.text}")
+
     def test_01_transferencia_real(self):
         self.criar(300)
         self.criar(301, 10)
         resposta = self.chamada(0, "POST", "/transferencias", json={"idOrigem": 300, "idDestino": 301, "valor": 25})
         self.assertEqual(resposta.status_code, 200, resposta.text)
         self.esperar_saldo(301, 35)
+        self.esperar_status(resposta.json()["transferenciaId"], "CONFIRMADA")
         self.assertEqual(self.chamada(0, "GET", "/contas/300").json()["saldo"], 75)
 
     def test_02_jwt_e_validacao(self):
@@ -113,3 +122,28 @@ class IntegracaoTest(unittest.TestCase):
         self.assertEqual(self.cliente.get(self.url(0) + "/contas/300", headers={"Authorization": "Bearer invalido"}).status_code, 401)
         self.assertEqual(self.chamada(0, "POST", "/transferencias", json={"idOrigem": 300, "idDestino": 300, "valor": 1}).status_code, 422)
         self.assertEqual(self.chamada(0, "POST", "/contas", json={"id": 304, "nomeAluno": "X", "saldoInicial": 0}).status_code, 400)
+
+    def test_03_offline_e_conta_perdida(self):
+        self.criar(304, 20)
+        self.parar(1)
+        resposta = self.chamada(0, "POST", "/transferencias", json={"idOrigem": 300, "idDestino": 304, "valor": 10})
+        self.assertEqual(resposta.status_code, 200, resposta.text)
+        self.assertEqual(resposta.json()["status"], "PENDENTE")
+        # O painel do RabbitMQ atualiza métricas por amostragem, não imediatamente.
+        for _ in range(80):
+            fila = self.cliente.get(f"{GESTOR}/queues/{self.vhost}/fila-agencia-1", auth=AUTH).json()
+            if fila.get("consumers") == 0 and fila.get("messages_ready", 0) >= 1:
+                break
+            time.sleep(0.2)
+        self.assertTrue(fila["durable"])
+        self.assertEqual(fila.get("consumers"), 0)
+        self.assertGreaterEqual(fila.get("messages_ready", 0), 1)
+        self.iniciar(1)
+        resultado = self.esperar_status(resposta.json()["transferenciaId"], "FALHOU")
+        self.assertIn("Conta nao encontrada", resultado["motivo"])
+        self.assertEqual(self.chamada(1, "GET", "/contas/304").status_code, 404)
+        self.assertEqual(self.chamada(0, "GET", "/contas/300").json()["saldo"], 65)
+
+    def test_04_status_protegido(self):
+        self.assertEqual(self.cliente.get(self.url(0) + f"/transferencias/{uuid4()}").status_code, 401)
+        self.assertEqual(self.chamada(0, "GET", f"/transferencias/{uuid4()}").status_code, 404)

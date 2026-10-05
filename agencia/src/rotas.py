@@ -72,3 +72,7 @@ router.add_api_route(
     dependencies=_usuario,
     tags=["transferencias"],
 )
+router.add_api_route(
+    "/transferencias/{transferencia_id}", transferencias_controller.consultar,
+    methods=["GET"], dependencies=_usuario, tags=["transferencias"],
+)

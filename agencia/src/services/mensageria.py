@@ -42,6 +42,7 @@ class Mensageria:
             for id_agencia in range(3):
                 fila = await self.canal.declare_queue(f"fila-agencia-{id_agencia}", durable=True)
                 await fila.bind(self.exchange, f"agencia.{id_agencia}.creditar")
+                await fila.bind(self.exchange, f"agencia.{id_agencia}.confirmar")
                 filas.append(fila)
             await filas[self.id_agencia].consume(self._consumir, no_ack=False)
         except Exception:

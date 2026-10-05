@@ -52,3 +52,9 @@ class EventoCredito(TransferenciaIn):
 class LoginIn(BaseModel):
     usuario: str = Field(min_length=1)
     senha: str = Field(min_length=1)
+
+
+class EventoResultado(EventoCredito):
+    tipo: Literal["CONFIRMAR"] = "CONFIRMAR"
+    resultado: Literal["CREDITO_APLICADO", "CREDITO_FALHOU"]
+    motivo: str | None = Field(default=None, max_length=300)

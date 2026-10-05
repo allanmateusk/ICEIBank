@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from src import estado
 from src.esquemas import TransferenciaIn
 from src.controllers.transferencias_controller import transferir, receber_credito
+from src.controllers import transferencias_controller as controller
 from src.services.registro_eventos import RegistroEventos
 from src.services.relogio_vetorial import RelogioVetorial
 from src.services.mensageria import PublicacaoRecusada
@@ -120,3 +121,32 @@ class TransferenciasTest(unittest.IsolatedAsyncioTestCase):
                     "idOrigem": 300, "idDestino": 301, "valor": 25,
                     "origemAgencia": 0, "destinoAgencia": 1, "vetorEnvio": [2, 0, 0]}
         self.assertEqual(receber_credito(mensagem)["resultado"], "CREDITO_FALHOU")
+
+    async def test_confirmacao_retentada_sem_novo_credito(self):
+        estado.ID_AGENCIA = 1
+        estado.relogio = RelogioVetorial(1)
+        estado.contas[301] = {"id": 301, "saldo": 10}
+        mensagem = {"tipo": "CREDITAR", "versao": 1, "transferenciaId": str(uuid4()),
+                    "idOrigem": 300, "idDestino": 301, "valor": 25,
+                    "origemAgencia": 0, "destinoAgencia": 1, "vetorEnvio": [2, 0, 0]}
+        anterior = controller.broker_ativo
+        broker = BrokerFake(TimeoutError())
+        controller.broker_ativo = broker
+        try:
+            with self.assertRaises(TimeoutError):
+                await controller.consumir(mensagem)
+            broker.erro = None
+            await controller.consumir(mensagem)
+            self.assertEqual(estado.contas[301]["saldo"], 35)
+            self.assertEqual(broker.mensagens[-1][0], "agencia.0.confirmar")
+            self.assertEqual(broker.mensagens[-1][1]["resultado"], "CREDITO_APLICADO")
+        finally:
+            controller.broker_ativo = anterior
+
+    async def test_confirmacao_antes_da_resposta_http(self):
+        class BrokerRapido(BrokerFake):
+            async def publicar(self, rota, evento):
+                controller.receber_confirmacao({**evento, "tipo": "CONFIRMAR",
+                                                "resultado": "CREDITO_APLICADO", "vetorEnvio": [2, 2, 0]})
+        resposta = await transferir(TransferenciaIn(idOrigem=300, idDestino=301, valor=10), self.request(BrokerRapido()), None)
+        self.assertEqual(resposta["status"], "CONFIRMADA")

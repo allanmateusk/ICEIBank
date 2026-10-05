@@ -2,7 +2,7 @@
 from uuid import UUID, uuid4
 from fastapi import Header, HTTPException, Request
 from .. import config, estado
-from ..esquemas import EventoCredito, TransferenciaIn
+from ..esquemas import EventoCredito, EventoResultado, TransferenciaIn
 from ..services.mensageria import BrokerIndisponivel, PublicacaoRecusada
 
 
@@ -104,5 +104,55 @@ def receber_credito(corpo: dict) -> dict:
         return resultado.copy()
 
 
+def consultar(transferencia_id: str) -> dict:
+    tid = _id(transferencia_id)
+    with estado.lock:
+        operacao = estado.transferencias.get(tid)
+        if not operacao:
+            raise HTTPException(404, "Acompanhamento nao encontrado nesta agencia. Pode ter sido perdido em um reinicio.")
+        return _resposta(operacao)
+
+
+def receber_confirmacao(corpo: dict):
+    evento = EventoResultado.model_validate(corpo)
+    if evento.origemAgencia != estado.ID_AGENCIA:
+        raise ValueError("Confirmacao entregue a agencia incorreta.")
+    tid = str(evento.transferenciaId)
+    with estado.lock:
+        operacao = estado.transferencias.get(tid)
+        if operacao and any(operacao[c] != getattr(evento, c) for c in ("idOrigem", "idDestino", "valor", "destinoAgencia")):
+            raise ValueError("Confirmacao nao corresponde a transferencia.")
+        if operacao and operacao["status"] in ("CONFIRMADA", "FALHOU"):
+            esperado = "CONFIRMADA" if evento.resultado == "CREDITO_APLICADO" else "FALHOU"
+            if operacao["status"] != esperado:
+                raise ValueError("Confirmacao conflitante.")
+            return
+        vetor = estado.relogio.ao_receber(evento.vetorEnvio)
+        detalhes = {"transferenciaId": tid, "idOrigem": evento.idOrigem,
+                    "idDestino": evento.idDestino, "valor": evento.valor, "resultado": evento.resultado}
+        if operacao:
+            operacao["status"] = "CONFIRMADA" if evento.resultado == "CREDITO_APLICADO" else "FALHOU"
+            if evento.motivo:
+                operacao["motivo"] = evento.motivo
+            tipo = "CONFIRMACAO_RECEBIDA"
+        else:
+            tipo = "CONFIRMACAO_SEM_REGISTRO"
+        estado.registro.registrar(tipo, vetor, detalhes)
+
+
 async def consumir(corpo: dict):
-    receber_credito(corpo)
+    if corpo.get("tipo") == "CONFIRMAR":
+        receber_confirmacao(corpo)
+        return
+    resultado = receber_credito(corpo)
+    with estado.lock:
+        evento = {k: v for k, v in resultado.items() if k != "pedido"}
+        evento.update(tipo="CONFIRMAR", versao=1, vetorEnvio=estado.relogio.ao_enviar())
+        estado.registro.registrar("CONFIRMACAO_ENVIADA", evento["vetorEnvio"],
+                                 {k: v for k, v in evento.items() if k != "vetorEnvio"})
+    # Se esta publicação falhar, o crédito já está no cache. A reentrega
+    # repete somente a confirmação, sem reaplicar o crédito.
+    await broker_ativo.publicar(f"agencia.{evento['origemAgencia']}.confirmar", evento)
+
+
+broker_ativo = None

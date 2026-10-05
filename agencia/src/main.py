@@ -14,14 +14,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import estado
 from .rotas import router
-from .controllers.transferencias_controller import consumir
+from .controllers import transferencias_controller
 from .services.mensageria import Mensageria
 
 
 @asynccontextmanager
 async def lifespan(app):
-    broker = Mensageria(estado.ID_AGENCIA, consumir)
+    broker = Mensageria(estado.ID_AGENCIA, transferencias_controller.consumir)
     app.state.mensageria = broker
+    transferencias_controller.broker_ativo = broker
     await broker.iniciar()
     try:
         yield
