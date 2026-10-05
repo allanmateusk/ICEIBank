@@ -1,5 +1,5 @@
 {
-  "data": "2026-10-05T21:23:36.109Z",
+  "data": "2026-10-05T22:15:55.135Z",
   "casos": [
     "login JWT",
     "saldo",
@@ -12,7 +12,10 @@
     "concorrência vetorial",
     "destino offline",
     "conta perdida após reinício",
-    "logout"
+    "logout",
+    "histórico local sem crédito na origem",
+    "resposta perdida: mesmo UUID após navegação e reload",
+    "saldo atual após repetição e depósito concorrente"
   ],
   "errosJavaScript": []
 }

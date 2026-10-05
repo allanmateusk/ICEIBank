@@ -94,7 +94,10 @@ uma regra de propriedade por titular/usuário.
 | `GET /transferencias/{transferenciaId}` | Status na agência da origem |
 
 O frontend envia um `Idempotency-Key` UUID e mantém a chave ao repetir o mesmo
-pedido. Reutilizá-la com outro payload retorna 409. Valores financeiros devem
+pedido. Pedidos sem resposta ficam guardados na mesma aba, inclusive após
+navegação e recarga. A edição fica bloqueada até recuperar o resultado. Depois
+da resposta, o frontend consulta o saldo atual. Reutilizar uma chave com outro
+payload retorna 409. Valores financeiros devem
 ser finitos, positivos nas movimentações e ter no máximo duas casas decimais.
 A rota REST `creditar-remoto` foi removida: créditos remotos chegam pelo broker.
 

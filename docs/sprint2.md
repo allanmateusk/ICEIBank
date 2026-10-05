@@ -98,7 +98,7 @@ de confirmação, JWT ausente/inválido/expirado e cenário offline/reinício re
 O teste do navegador usa três processos e RabbitMQ reais; suas capturas e os
 relatórios da execução estão em `evidencias/sprint2/`.
 
-Validação em 05/10/2026: 22 testes Python aprovados, E2E com os 12 cenários
+Validação em 05/10/2026: 23 testes Python aprovados, E2E com os 15 cenários
 registrados em `resultado-testes.json` aprovado, build Vite aprovado e
 `npm audit` sem vulnerabilidades. Inclui reentrega com merge vetorial e resultado
 confirmado preservado mesmo quando a confirmação de publicação se perde.
@@ -109,5 +109,33 @@ incluindo data executada pelo PowerShell. Os demais PNGs são capturas da aplica
 Para atender a uma exigência de screenshot de terminal nativo, reproduza o
 procedimento do README das evidências e capture os terminais com `Get-Date`.
 
+## Correções após a revisão
 
+- O pedido cujo resultado HTTP não chegou é conservado em `sessionStorage`,
+  por agência, com a mesma chave UUID. Navegação e recarga da aba preservam o
+  pedido. Enquanto estiver sem resposta, a interface bloqueia alterações e
+  permite recuperar o resultado reutilizando a chave.
+- Após receber o resultado, a interface consulta o saldo atual. O saldo da
+  resposta original da transferência é um registro daquele momento, não a
+  posição atual da conta. Se a consulta falhar, o saldo anterior é retirado.
+- No histórico, o débito de transferência pertence somente à origem e o crédito
+  somente ao destino, inclusive para contas da mesma agência.
 
+A deduplicação do backend continua em memória. Recuperar a chave na mesma aba
+não garante deduplicação após reiniciar o processo da agência. Persistência e
+transações distribuídas continuam fora do escopo desta sprint.
+
+## Uso de IA na sprint2
+
+Codex/OpenAI foi utilizado como apoio ao planejamento, protótipos, implementação,
+revisão, correções e testes automatizados da sprint2. A declaração sobre Claude
+em `RESPOSTAS.md` pertence à base da sprint1. O aluno deve estudar e explicar o
+código entregue; esta declaração não afirma que a defesa oral já ocorreu.
+
+## Pendências formais da entrega
+
+Os relatórios gerados não substituem as capturas de terminal solicitadas na
+seção 4.3. O procedimento para produzir essas capturas está em
+`evidencias/sprint2/README.md`. O histórico tem commits separados por mudança,
+concentrados em 05/10/2026; ele não demonstra desenvolvimento distribuído pelas
+três semanas sugeridas no roteiro. As datas reais dos commits são preservadas.

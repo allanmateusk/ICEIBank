@@ -14,6 +14,8 @@ de contas da sessão manual. Veja `resultado-testes.json` para data e casos.
 | `frontend-mobile.png` | Histórico em 360 px |
 | `frontend-pendente.png` | Pedido aceito enquanto o destino está offline |
 | `frontend-falha.png` | Resultado de crédito não aplicado |
+| `regressao-historico-local.png` | Conta de origem sem o crédito pertencente ao destino |
+| `regressao-recuperacao-saldo.png` | Saldo atualizado após recuperar resposta perdida com o mesmo UUID |
 
 As três primeiras imagens são relatórios visuais gerados com os logs/saídas
 capturados e `Get-Date -Format o` executado no PowerShell. São distintos de
