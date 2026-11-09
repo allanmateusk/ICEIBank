@@ -40,6 +40,9 @@ services:
       DATABASE_URL: postgresql://iceibank:iceibank-dev@postgres:5432/iceibank
       AGENCIA_ID: "0"
       PORT: "4000"
+      AGENCIA_0_URL: http://agencia-0:4000
+      AGENCIA_1_URL: http://agencia-1:4001
+      AGENCIA_2_URL: http://agencia-2:4002
     ports:
       - "127.0.0.1:4000:4000"
     depends_on:
