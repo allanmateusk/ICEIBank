@@ -14,6 +14,7 @@ from .controllers import (
     auth_controller,
     contas_controller,
     historico_controller,
+    sincronizacao_controller,
     transferencias_controller,
 )
 from .seguranca import requer_token
@@ -32,6 +33,10 @@ router.add_api_route(
 
 # ---- Contas (exigem token de usuário) ----
 _usuario = [Depends(requer_token)]
+router.add_api_route(
+    "/sincronizacao", sincronizacao_controller.sincronizar,
+    methods=["POST"], dependencies=_usuario, tags=["sincronizacao"],
+)
 router.add_api_route(
     "/contas",
     contas_controller.criar_conta,
