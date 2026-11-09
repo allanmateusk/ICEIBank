@@ -19,7 +19,13 @@ async def transferir(dados: TransferenciaIn, request: Request,
     tid = _id(chave)
     destino = config.agencia_responsavel(dados.idDestino)
     broker = request.app.state.mensageria
+    sync = getattr(getattr(request, "state", None), "sincronizacao", None)
     with estado.lock:
+        # Os dois endpoints compartilham o namespace de idempotência. Caso
+        # contrário, um UUID já aplicado como saque ou depósito offline pode
+        # ser reaproveitado para debitar uma transferência distinta.
+        if tid in estado.sincronizacoes and sync is None:
+            raise HTTPException(409, "Chave ja utilizada em sincronizacao.")
         anterior = estado.transferencias.get(tid)
         if anterior:
             if anterior["pedido"] != dados.model_dump():
@@ -28,7 +34,6 @@ async def transferir(dados: TransferenciaIn, request: Request,
         origem = estado.contas.get(dados.idOrigem)
         if origem is None:
             raise HTTPException(404, "Conta de origem nao encontrada nesta agencia.")
-        sync = getattr(getattr(request, "state", None), "sincronizacao", None)
         if sync is not None:
             versao_conta.validar(origem, sync.vetorBase, sync.sessaoServidor)
         if origem["saldo"] < dados.valor:

@@ -51,9 +51,14 @@ async def sincronizar(dados: SincronizacaoIn, request: Request) -> dict:
             if dados.tipo == "SAQUE" and conta["saldo"] < dados.valor:
                 raise HTTPException(400, "Saldo insuficiente.")
             sinal = 1 if dados.tipo == "DEPOSITO" else -1
-            conta["saldo"] = round(conta["saldo"] + sinal * dados.valor, 2)
+            novo_saldo = round(conta["saldo"] + sinal * dados.valor, 2)
+            # Uma falha ao gravar o evento não pode alterar o saldo sem
+            # registrar a chave de idempotência: a repetição aplicaria duas
+            # vezes a mesma operação.
             estado.registro.registrar("SINCRONIZACAO_" + dados.tipo, estado.relogio.evento_local(),
-                                     {"operacaoId": chave, "id": dados.contaId, "valor": dados.valor})
+                                     {"operacaoId": chave, "id": dados.contaId, "valor": dados.valor,
+                                      "novoSaldo": novo_saldo})
+            conta["saldo"] = novo_saldo
             versao_conta.atualizar(dados.contaId)
             resposta = {"operacaoId": chave, "status": "SINCRONIZADA", "conta": versao_conta.snapshot(conta)}
             estado.sincronizacoes[chave] = {"pedido": pedido, "resposta": resposta}

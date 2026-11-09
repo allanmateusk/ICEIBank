@@ -3,6 +3,7 @@ import asyncio
 import tempfile
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 from uuid import uuid4
 from fastapi import HTTPException
 
@@ -60,6 +61,33 @@ class SincronizacaoTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(HTTPException) as erro:
             await sync.sincronizar(pedido.model_copy(update={"valor": 20}), self.request)
         self.assertEqual(erro.exception.status_code, 409)
+
+    async def test_uuid_sincronizado_nao_pode_ser_reutilizado_na_transferencia_online(self):
+        from src.controllers.transferencias_controller import transferir
+        from src.esquemas import TransferenciaIn
+
+        pedido = self.pedido(tipo="DEPOSITO")
+        await sync.sincronizar(pedido, self.request)
+        requisicao_online = SimpleNamespace(
+            state=SimpleNamespace(), app=SimpleNamespace(state=SimpleNamespace(mensageria=None))
+        )
+        with self.assertRaises(HTTPException) as erro:
+            await transferir(TransferenciaIn(idOrigem=300, idDestino=303, valor=10),
+                             requisicao_online, str(pedido.operacaoId))
+        self.assertEqual(erro.exception.status_code, 409)
+        self.assertEqual(estado.contas[300]["saldo"], 110)
+        self.assertEqual(estado.contas[303]["saldo"], 10)
+
+    async def test_falha_de_log_nao_aplica_deposito_duas_vezes(self):
+        pedido = self.pedido()
+        with patch.object(estado.registro, "registrar", side_effect=OSError("disco indisponível")):
+            with self.assertRaises(OSError):
+                await sync.sincronizar(pedido, self.request)
+        self.assertEqual(estado.contas[300]["saldo"], 100)
+        self.assertNotIn(str(pedido.operacaoId), estado.sincronizacoes)
+        resposta = await sync.sincronizar(pedido, self.request)
+        self.assertEqual(resposta["conta"]["saldo"], 110)
+        self.assertEqual((await sync.sincronizar(pedido, self.request))["conta"]["saldo"], 110)
 
     async def test_versao_desatualizada_e_concorrente(self):
         pedido = self.pedido()
