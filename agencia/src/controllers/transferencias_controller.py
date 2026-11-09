@@ -4,6 +4,7 @@ from fastapi import Header, HTTPException, Request
 from .. import config, estado
 from ..esquemas import EventoCredito, EventoResultado, TransferenciaIn
 from ..services.mensageria import BrokerIndisponivel, PublicacaoRecusada
+from ..services import versao_conta
 
 
 def _id(chave):
@@ -27,6 +28,9 @@ async def transferir(dados: TransferenciaIn, request: Request,
         origem = estado.contas.get(dados.idOrigem)
         if origem is None:
             raise HTTPException(404, "Conta de origem nao encontrada nesta agencia.")
+        sync = getattr(getattr(request, "state", None), "sincronizacao", None)
+        if sync is not None:
+            versao_conta.validar(origem, sync.vetorBase, sync.sessaoServidor)
         if origem["saldo"] < dados.valor:
             raise HTTPException(400, "Saldo insuficiente.")
         conta_destino = estado.contas.get(dados.idDestino) if destino == estado.ID_AGENCIA else None
@@ -41,9 +45,11 @@ async def transferir(dados: TransferenciaIn, request: Request,
         operacao["saldoOrigem"] = origem["saldo"]
         detalhes = {"transferenciaId": tid, **dados.model_dump()}
         estado.registro.registrar("TRANSFERENCIA_DEBITO", estado.relogio.evento_local(), detalhes)
+        versao_conta.atualizar(dados.idOrigem)
         if conta_destino is not None:
             conta_destino["saldo"] = round(conta_destino["saldo"] + dados.valor, 2)
             estado.registro.registrar("TRANSFERENCIA_CREDITO", estado.relogio.evento_local(), detalhes)
+            versao_conta.atualizar(dados.idDestino)
             operacao.update(status="CONFIRMADA", saldoDestino=conta_destino["saldo"])
             return _resposta(operacao)
         evento = {"tipo": "CREDITAR", "versao": 1, **detalhes,
@@ -100,6 +106,7 @@ def receber_credito(corpo: dict) -> dict:
                      "pedido": evento.model_dump(mode="json", exclude={"vetorEnvio"})}
         if conta:
             conta["saldo"] = round(conta["saldo"] + evento.valor, 2)
+            versao_conta.atualizar(evento.idDestino)
             tipo = "TRANSFERENCIA_CREDITO_REMOTO"
         else:
             resultado["motivo"] = "Conta nao encontrada no destino (estado em memoria perdido no reinicio)."

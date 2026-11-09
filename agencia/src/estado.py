@@ -32,3 +32,7 @@ contas: dict[int, dict] = {}
 lock = threading.RLock()
 transferencias: dict[str, dict] = {}
 creditos_processados: dict[str, dict] = {}
+# Versões específicas das contas e resultados de operações offline duram a
+# sessão do processo, assim como as próprias contas.
+versoes_contas: dict[int, list[int]] = {}
+sincronizacoes: dict[str, dict] = {}

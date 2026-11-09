@@ -2,6 +2,7 @@
 from fastapi import HTTPException
 from .. import config, estado
 from ..esquemas import CriarContaIn, ValorIn
+from ..services import versao_conta
 
 
 def _conta(id_conta: int) -> dict:
@@ -22,12 +23,13 @@ def criar_conta(dados: CriarContaIn) -> dict:
         conta["saldo"] = conta.pop("saldoInicial")
         estado.contas[dados.id] = conta
         estado.registro.registrar("CRIAR_CONTA", estado.relogio.evento_local(), dados.model_dump())
-        return conta.copy()
+        versao_conta.atualizar(dados.id)
+        return versao_conta.snapshot(conta)
 
 
 def consultar_saldo(id_conta: int) -> dict:
     with estado.lock:
-        return _conta(id_conta).copy()
+        return versao_conta.snapshot(_conta(id_conta))
 
 
 def depositar(id_conta: int, dados: ValorIn) -> dict:
@@ -36,7 +38,8 @@ def depositar(id_conta: int, dados: ValorIn) -> dict:
         conta["saldo"] = round(conta["saldo"] + dados.valor, 2)
         estado.registro.registrar("DEPOSITO", estado.relogio.evento_local(),
                                  {"id": id_conta, "valor": dados.valor, "novoSaldo": conta["saldo"]})
-        return conta.copy()
+        versao_conta.atualizar(id_conta)
+        return versao_conta.snapshot(conta)
 
 
 def sacar(id_conta: int, dados: ValorIn) -> dict:
@@ -47,4 +50,5 @@ def sacar(id_conta: int, dados: ValorIn) -> dict:
         conta["saldo"] = round(conta["saldo"] - dados.valor, 2)
         estado.registro.registrar("SAQUE", estado.relogio.evento_local(),
                                  {"id": id_conta, "valor": dados.valor, "novoSaldo": conta["saldo"]})
-        return conta.copy()
+        versao_conta.atualizar(id_conta)
+        return versao_conta.snapshot(conta)
