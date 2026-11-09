@@ -1,8 +1,7 @@
 # Sprint 3: liderança e sincronização offline
 
-Esta implementação parte da Sprint 2 e conserva o backend FastAPI, RabbitMQ e
-frontend web. O enunciado completo das seções 2 a 10 não estava disponível;
-o contrato abaixo é provisório e deve ser conferido com o roteiro da disciplina.
+A Sprint 3 mantém o backend FastAPI, o RabbitMQ e o frontend web da Sprint 2.
+O contrato de sincronização está descrito abaixo.
 
 ## Executar e demonstrar
 
@@ -22,7 +21,7 @@ logs, informe o caminho como primeiro argumento.
 O aplicativo e as instruções de preparação Android estão em [mobile/README.md](../mobile/README.md).
 Uma conta precisa ser consultada online antes de realizar operações offline.
 
-## Contrato provisório de sincronização
+## Contrato de sincronização
 
 `POST /sincronizacao` exige JWT. O corpo contém `operacaoId` (UUID), `contaId`,
 `tipo` (`DEPOSITO`, `SAQUE` ou `TRANSFERENCIA`), `valor`, `vetorBase` e
@@ -47,6 +46,6 @@ seguintes da mesma conta quando ocorre conflito.
   O teste da Sprint 3 verifica sincronização, transferência e failover reais.
 - O app Flutter precisa ser compilado e testado em dispositivo/emulador,
   incluindo queda da líder, retomada da fila e conflito visível.
-- Criar `evidencias/sprint3/` com os oito prints oficiais após obter a seção 4.2.
-  Atualizar RESPOSTAS.md após obter as questões das seções 5.5, 6.4, 7.3,
-  8.3, 9.6 e 10.3; não inventar enunciados ou resultados observados.
+- Conferir o contrato de sincronização com a seção 9 do roteiro.
+- Adicionar os oito prints da seção 4.2 em `evidencias/sprint3/` e completar
+  as respostas das seções 5.5, 6.4, 7.3, 8.3, 9.6 e 10.3 em `RESPOSTAS.md`.

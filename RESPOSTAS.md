@@ -405,8 +405,8 @@ parede para leitura e identifica a sessão e o vetor de cada evento; essa ordem
 de exibição não prova causalidade entre agências.
 
 O aplicativo guarda no SQLite o saldo confirmado e as operações pendentes.
-O saldo estimado inclui essas operações, que só são confirmadas quando a API
-responde. Cada operação tem UUID persistente; uma versão de conta divergente
+O saldo estimado inclui operações ainda não enviadas e fica indisponível quando
+há um envio com resultado incerto. Cada operação tem UUID persistente; uma versão de conta divergente
 ou uma sessão de servidor diferente retorna 409 e bloqueia a fila da conta
 para revisão. A transferência remota ainda precisa ser acompanhada até o
 resultado do crédito no RabbitMQ. Contas e deduplicação permanecem em memória
@@ -418,5 +418,5 @@ mostra a disponibilidade e a latência observadas e alerta quando suas respostas
 indicam líderes diferentes. Mais detalhes e instruções de teste estão em
 [docs/sprint3.md](docs/sprint3.md).
 
-As questões específicas das seções 5.5, 6.4, 7.3, 8.3, 9.6 e 10.3 não foram
-fornecidas; estas observações precisam ser ajustadas às perguntas oficiais.
+Pendentes: respostas específicas às questões das seções 5.5, 6.4, 7.3, 8.3,
+9.6 e 10.3 do roteiro.

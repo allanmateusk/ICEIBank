@@ -1,4 +1,4 @@
-"""Contrato provisório de sincronização offline; estado dura a sessão da agência."""
+"""Sincronização offline com controle de versão e idempotência por sessão."""
 from typing import Literal
 from uuid import UUID
 from fastapi import HTTPException, Request
