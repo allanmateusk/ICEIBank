@@ -4,8 +4,8 @@
 
 A implementação de eleição Bully, sincronização offline e aplicativo móvel está
 descrita em [docs/sprint3.md](docs/sprint3.md). A aplicação Flutter fica em
-[mobile/](mobile/README.md). A entrega ainda requer verificação em emulador,
-testes com os serviços reais e as evidências solicitadas pelo enunciado.
+[mobile/](mobile/README.md). A entrega ainda requer verificação em emulador
+e as evidências solicitadas pelo enunciado.
 
 Projeto individual de Allan Mateus: banco acadêmico dividido em três agências.
 A sprint1 está preservada no commit `sprint1`. Esta sprint2 evolui essa base com

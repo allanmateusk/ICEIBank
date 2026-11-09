@@ -26,6 +26,8 @@ class _BankingState extends State<Banking> with WidgetsBindingObserver {
   final user = TextEditingController();
   final password = TextEditingController();
   final account = TextEditingController();
+  final accountName = TextEditingController();
+  final initialBalance = TextEditingController(text: '0');
   final amount = TextEditingController();
   final destination = TextEditingController();
   late Api api;
@@ -39,10 +41,14 @@ class _BankingState extends State<Banking> with WidgetsBindingObserver {
   List<String> diagnostico = List.filled(3, 'Aguardando consulta');
   bool verificandoLider = false;
   bool sincronizando = false;
+  bool registrandoOperacao = false;
   Timer? timer;
   StreamSubscription<List<ConnectivityResult>>? connectivity;
   Storage get store => widget.storage;
   int? get id => int.tryParse(account.text);
+  // O mesmo usuário pode existir em servidores independentes. Não misture
+  // cache ou operações entre hosts, mesmo se os nomes forem iguais.
+  String? get perfil => usuario == null ? null : '${api.host}|$usuario';
 
   @override
   void initState() {
@@ -59,7 +65,7 @@ class _BankingState extends State<Banking> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     timer?.cancel(); connectivity?.cancel();
-    for (final controller in [host, user, password, account, amount, destination]) { controller.dispose(); }
+    for (final controller in [host, user, password, account, accountName, initialBalance, amount, destination]) { controller.dispose(); }
     super.dispose();
   }
   void atualizar(VoidCallback f) { if (mounted) setState(f); }
@@ -104,12 +110,12 @@ class _BankingState extends State<Banking> with WidgetsBindingObserver {
     atualizar(() { usuario = null; api.token = null; conta = null; fila = []; transferencias = []; status = 'Sessão encerrada.'; });
   }
   Future<void> atualizarFila() async {
-    final u = usuario; if (u == null) return;
+    final u = perfil; if (u == null) return;
     final rows = await store.pendentes(u);
     atualizar(() => fila = rows);
   }
   Future<void> acompanharTransferencias() async {
-    final u = usuario; if (u == null) return;
+    final u = perfil; if (u == null) return;
     final rows = await store.transferencias(u);
     for (final row in rows) {
       final dados = Map<String, dynamic>.from(jsonDecode(row['dados'] as String));
@@ -147,7 +153,7 @@ class _BankingState extends State<Banking> with WidgetsBindingObserver {
     }
   }
   Future<void> consultar() async {
-    final numero = id; final u = usuario;
+    final numero = id; final u = perfil;
     if (numero == null || numero < 0 || u == null) { atualizar(() => status = 'Informe uma conta válida.'); return; }
     try {
       final atual = await api.request(numero % 3, '/contas/$numero');
@@ -155,41 +161,79 @@ class _BankingState extends State<Banking> with WidgetsBindingObserver {
       atualizar(() { conta = atual; status = 'Saldo atualizado.'; });
     } catch (e) {
       final cached = await store.conta(u, numero);
-      atualizar(() { conta = cached; status = cached == null ? erro(e) : 'Sem resposta da agência. Exibindo último saldo armazenado.'; });
+      atualizar(() {
+        conta = cached;
+        status = e is ApiError
+            ? '${erro(e)}${cached == null ? '' : ' Exibindo último saldo armazenado.'}'
+            : cached == null ? erro(e) : 'Sem resposta da agência. Exibindo último saldo armazenado.';
+      });
     }
     await atualizarFila();
   }
+  Future<void> criarConta() async {
+    final numero = id;
+    final u = perfil;
+    final nome = accountName.text.trim();
+    final saldo = double.tryParse(initialBalance.text.replaceAll(',', '.'));
+    if (u == null || numero == null || numero < 0 || nome.isEmpty || saldo == null ||
+        !saldo.isFinite || saldo < 0 || (saldo * 100 - (saldo * 100).round()).abs() > 0.000001) {
+      atualizar(() => status = 'Informe número, nome e saldo inicial válidos.');
+      return;
+    }
+    try {
+      final criada = await api.request(numero % 3, '/contas', body: {
+        'id': numero, 'nomeAluno': nome, 'saldoInicial': saldo,
+      });
+      await store.salvarConta(u, criada);
+      atualizar(() { conta = criada; status = 'Conta criada.'; });
+      await atualizarFila();
+    } catch (e) {
+      atualizar(() => status = erro(e));
+    }
+  }
   Future<void> movimentar(String tipo) async {
-    final u = usuario; final atual = conta; final numero = id;
+    if (registrandoOperacao) return;
+    final u = perfil; final atual = conta; final numero = id;
     final valor = double.tryParse(amount.text.replaceAll(',', '.'));
     final destino = int.tryParse(destination.text);
     if (u == null || atual == null || numero == null || atual['id'] != numero || valor == null || !valor.isFinite || valor <= 0 || (valor * 100 - (valor * 100).round()).abs() > 0.000001 || (tipo == 'TRANSFERENCIA' && (destino == null || destino < 0 || destino == numero))) {
       atualizar(() => status = 'Confira conta, valor e destino. Consulte a conta antes de movimentar.'); return;
     }
     if (atual['vetorVersao'] == null || atual['sessaoServidor'] == null) { atualizar(() => status = 'A agência não informou a versão necessária para sincronizar.'); return; }
+    if (fila.any((item) => item['conta'] == numero && item['estado'] != 'PENDENTE')) {
+      atualizar(() => status = 'Resolva a operação bloqueada desta conta antes de adicionar outra.'); return;
+    }
     if (tipo != 'DEPOSITO' && saldoEstimado < valor) { atualizar(() => status = 'Saldo estimado insuficiente.'); return; }
     final operacao = <String, dynamic>{'operacaoId': const Uuid().v4(), 'contaId': numero, 'tipo': tipo, 'valor': valor, 'vetorBase': atual['vetorVersao'], 'sessaoServidor': atual['sessaoServidor'], if (tipo == 'TRANSFERENCIA') 'destinoId': destino};
-    await store.enfileirar(u, operacao);
-    amount.clear();
-    await atualizarFila();
-    atualizar(() => status = 'Operação registrada no dispositivo; aguardando confirmação.');
-    await sincronizar();
+    registrandoOperacao = true;
+    try {
+      await store.enfileirar(u, operacao);
+      amount.clear();
+      await atualizarFila();
+      atualizar(() => status = 'Operação registrada no dispositivo; aguardando confirmação.');
+      await sincronizar();
+    } finally {
+      registrandoOperacao = false;
+    }
   }
   Future<void> descartar(Map<String, Object?> item) async {
     final confirmacao = await showDialog<bool>(context: context, builder: (context) => AlertDialog(title: const Text('Descartar operação?'), content: const Text('A operação será removida da fila. As operações posteriores desta conta precisarão de revisão.'), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Descartar'))]));
-    if (confirmacao != true || usuario == null) return;
-    await store.descartar(usuario!, item);
+    final u = perfil;
+    if (confirmacao != true || u == null) return;
+    await store.descartar(u, item);
     await atualizarFila();
     atualizar(() => status = 'Operação descartada. Consulte o saldo antes de refazê-la.');
   }
   Future<void> sincronizar() async {
-    final u = usuario;
+    final u = perfil;
     if (u == null || sincronizando) return;
+    final cliente = api;
     sincronizando = true;
     try {
       final rows = await store.pendentes(u);
       final bloqueadas = <int>{};
       for (final item in rows) {
+        if (perfil != u) break;
         final numero = item['conta'] as int;
         if (bloqueadas.contains(numero)) continue;
         if (item['estado'] != 'PENDENTE') { bloqueadas.add(numero); continue; }
@@ -198,7 +242,7 @@ class _BankingState extends State<Banking> with WidgetsBindingObserver {
         if (atuais.isEmpty) continue;
         final operacao = Map<String, dynamic>.from(jsonDecode(atuais.first['dados'] as String));
         try {
-          final resposta = await api.request(numero % 3, '/sincronizacao', body: operacao);
+          final resposta = await cliente.request(numero % 3, '/sincronizacao', body: operacao);
           final atual = Map<String, dynamic>.from(resposta['conta'] as Map);
           final transferencia = resposta['transferencia'];
           await store.concluir(u, item, atual, transferencia: transferencia is Map ? Map<String, dynamic>.from(transferencia) : null);
@@ -244,6 +288,11 @@ class _BankingState extends State<Banking> with WidgetsBindingObserver {
         Card(child: ExpansionTile(title: const Text('Diagnóstico das agências'), subtitle: const Text('Disponibilidade e tempo de resposta'), children: [for (var i = 0; i < 3; i++) ListTile(title: Text('Agência $i'), subtitle: Text(diagnostico[i]))])),
         input(account, 'Número da conta', numeric: true),
         OutlinedButton(onPressed: consultar, child: const Text('Consultar saldo')),
+        ExpansionTile(title: const Text('Criar conta'), children: [
+          input(accountName, 'Nome do titular'),
+          input(initialBalance, 'Saldo inicial', numeric: true),
+          OutlinedButton(onPressed: criarConta, child: const Text('Criar conta online')),
+        ]),
         if (conta != null && conta!['id'] == id) Card(child: ListTile(title: Text('Saldo confirmado: R\$ ${(conta!['saldo'] as num).toStringAsFixed(2)}'), subtitle: Text('Saldo estimado: R\$ ${saldoEstimado.toStringAsFixed(2)} (inclui pendências)'))),
         input(amount, 'Valor', numeric: true), input(destination, 'Conta destino (transferência)', numeric: true),
         Wrap(spacing: 8, children: [FilledButton(onPressed: () => movimentar('DEPOSITO'), child: const Text('Depositar')), FilledButton(onPressed: () => movimentar('SAQUE'), child: const Text('Sacar')), FilledButton(onPressed: () => movimentar('TRANSFERENCIA'), child: const Text('Transferir'))]),

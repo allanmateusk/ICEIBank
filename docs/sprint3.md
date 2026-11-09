@@ -42,8 +42,9 @@ seguintes da mesma conta quando ocorre conflito.
 - Contas, versões e chaves de deduplicação estão em memória e são perdidas ao
   reiniciar a agência; uma fila antiga exige reconciliação. A líder coordena a
   eleição, mas os dados de contas não são replicados para ela.
-- Testes unitários usam substitutos para o broker; execute também os testes de
-  integração da Sprint 2 com RabbitMQ e Postgres ativos.
+- Com RabbitMQ e Postgres ativos, execute `cd agencia` e depois
+  `uv run python -m unittest tests.test_integracao tests.test_integracao_sprint3 -v`.
+  O teste da Sprint 3 verifica sincronização, transferência e failover reais.
 - O app Flutter precisa ser compilado e testado em dispositivo/emulador,
   incluindo queda da líder, retomada da fila e conflito visível.
 - Criar `evidencias/sprint3/` com os oito prints oficiais após obter a seção 4.2.
