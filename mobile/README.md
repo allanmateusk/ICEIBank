@@ -4,6 +4,12 @@ Aplicativo Flutter que consulta as agências, mostra a líder, mantém o último
 
 ## Funcionalidade adicional: diagnóstico das agências
 
+Antes de enviar uma operação, o app grava o estado `INCERTA`. Se perder a
+resposta, repete exatamente o mesmo pedido e UUID. Enquanto houver resultado
+incerto para a conta, a tela suspende o saldo estimado para não contar uma
+movimentação duas vezes. Na atualização do banco local da versão 1 para a 2,
+pendências antigas também passam por essa reconciliação conservadora.
+
 O painel de diagnóstico consulta as três agências em paralelo a cada cinco segundos e ao atualizar manualmente. Para cada uma, mostra disponibilidade e o tempo de resposta em milissegundos. Se as agências acessíveis informarem líderes diferentes, o painel exibe que a eleição está em andamento. A disponibilidade é uma observação momentânea e não garante que uma próxima operação bancária será concluída.
 
 ## Preparação

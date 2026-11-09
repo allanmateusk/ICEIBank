@@ -82,6 +82,18 @@ class BullyTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.nodos[0].receber_coordenador(2, [1, 2])
 
+    async def test_reconverge_apos_rede_restaurada_sem_reiniciar_processos(self):
+        self.rede.agencias.clear()
+        await asyncio.gather(*(n.iniciar_eleicao('rede_fora') for n in self.nodos))
+        await asyncio.gather(*(n.eleicao for n in self.nodos))
+        self.assertEqual([n.lider for n in self.nodos], [0, 1, 2])
+        self.rede.agencias.update({n.id: n for n in self.nodos})
+        for no in self.nodos:
+            no.criar_tarefa(no.monitorar())
+        await self.aguardar_lider([0, 1, 2], 2)
+        await asyncio.sleep(.15)
+        self.assertEqual([n.lider for n in self.nodos], [2, 2, 2])
+
     async def test_coordenador_libera_tarefa_antiga_para_nova_eleicao(self):
         no = self.nodos[0]
         no.espera = 10

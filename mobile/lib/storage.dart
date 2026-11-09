@@ -2,11 +2,29 @@ import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
+double? projetarSaldo(Map<String, dynamic>? conta, List<Map<String, Object?>> fila) {
+  if (conta == null) return null;
+  final operacoes = fila.where((item) => item['conta'] == conta['id']);
+  // Uma resposta perdida pode já estar refletida no saldo consultado.
+  // Só o replay com o mesmo UUID permite concluir a reconciliação.
+  if (operacoes.any((item) => item['estado'] == 'INCERTA')) return null;
+  var saldo = (conta['saldo'] as num).toDouble();
+  for (final item in operacoes.where((item) => item['estado'] == 'PENDENTE')) {
+    final op = jsonDecode(item['dados'] as String) as Map;
+    saldo += (op['tipo'] == 'DEPOSITO' ? 1 : -1) * (op['valor'] as num).toDouble();
+  }
+  return saldo;
+}
+
 class Storage {
   late Database db;
   Future<void> init() async {
     db = await openDatabase(p.join(await getDatabasesPath(), 'iceibank.db'),
-        version: 1, onCreate: (db, _) async {
+        version: 2, onUpgrade: (db, oldVersion, newVersion) async {
+      // A versão anterior não distinguia pedidos enviados de pedidos locais.
+      await db.update('fila', {'estado': 'INCERTA'},
+          where: 'estado = ?', whereArgs: ['PENDENTE']);
+    }, onCreate: (db, _) async {
       await db.execute('CREATE TABLE contas (usuario TEXT NOT NULL, id INTEGER NOT NULL, dados TEXT NOT NULL, PRIMARY KEY(usuario,id))');
       await db.execute('CREATE TABLE fila (ordem INTEGER PRIMARY KEY AUTOINCREMENT, usuario TEXT NOT NULL, id TEXT NOT NULL UNIQUE, conta INTEGER NOT NULL, dados TEXT NOT NULL, estado TEXT NOT NULL, erro TEXT)');
       await db.execute('CREATE TABLE transferencias (usuario TEXT NOT NULL, id TEXT NOT NULL, agencia INTEGER NOT NULL, dados TEXT NOT NULL, PRIMARY KEY(usuario,id))');

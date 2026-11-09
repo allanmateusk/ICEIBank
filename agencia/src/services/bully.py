@@ -156,6 +156,16 @@ class Bully:
                     await self.iniciar_eleicao('lider_desconhecida')
                 continue
             if lider == self.id:
+                # Uma partição pode deixar várias líderes vivas. Ao recuperar
+                # a rede, a líder inferior precisa redescobrir IDs superiores.
+                superiores = [i for i in self.urls if i > self.id]
+                respostas = await asyncio.gather(*(
+                    self.chamar(i, '/bully/lider') for i in superiores))
+                async with self.lock:
+                    reconciliar = self.lider == self.id and any(
+                        r is not None for r in respostas)
+                if reconciliar:
+                    await self.iniciar_eleicao('superior_redescoberta')
                 continue
             resposta = await self.chamar(lider, '/bully/lider')
             async with self.lock:
