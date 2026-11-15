@@ -18,9 +18,8 @@ NUMERO_AGENCIAS = 3
 PORTA_BASE = 4000 + OFFSET
 
 AGENCIAS = [
-    {"id": 0, "url": f"http://localhost:{PORTA_BASE}"},
-    {"id": 1, "url": f"http://localhost:{PORTA_BASE + 1}"},
-    {"id": 2, "url": f"http://localhost:{PORTA_BASE + 2}"},
+    {"id": i, "url": os.environ.get(f"AGENCIA_{i}_URL", f"http://localhost:{PORTA_BASE + i}")}
+    for i in range(NUMERO_AGENCIAS)
 ]
 
 

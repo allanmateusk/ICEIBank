@@ -5,6 +5,7 @@ import logging
 import os
 import aio_pika
 from .relogio_vetorial import validar_vetor
+from .. import estado, banco
 
 log = logging.getLogger(__name__)
 EXCHANGE = "iceibank.eventos"
@@ -23,6 +24,7 @@ class Mensageria:
         self.id_agencia = id_agencia
         self.ao_receber = ao_receber
         self.conexao = self.canal = self.exchange = None
+        self.publicador = None
 
     @property
     def disponivel(self):
@@ -45,13 +47,37 @@ class Mensageria:
                 await fila.bind(self.exchange, f"agencia.{id_agencia}.confirmar")
                 filas.append(fila)
             await filas[self.id_agencia].consume(self._consumir, no_ack=False)
+            self.publicador = asyncio.create_task(self._publicar_pendentes())
         except Exception:
             await self.fechar()
             raise RuntimeError("Nao foi possivel iniciar RabbitMQ; confira RABBITMQ_URL e o broker.") from None
 
     async def fechar(self):
+        if self.publicador:
+            self.publicador.cancel()
+            try:
+                await self.publicador
+            except asyncio.CancelledError:
+                pass
         if self.conexao:
             await self.conexao.close()
+
+    async def _publicar_pendentes(self):
+        while True:
+            if banco.ativo() and not estado.reconciliacao_necessaria:
+                with estado.lock:
+                    itens = list(estado.outbox.items())
+                for chave, item in itens:
+                    try:
+                        await self.publicar(item["routing_key"], item["evento"])
+                        with estado.transacao():
+                            if estado.outbox.get(chave) == item:
+                                estado.outbox.pop(chave, None)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as erro:
+                        log.warning("OUTBOX_REPETIR agencia=%s id=%s erro=%s", self.id_agencia, chave, type(erro).__name__)
+            await asyncio.sleep(1)
 
     async def publicar(self, routing_key: str, evento: dict):
         if not self.disponivel:

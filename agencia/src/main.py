@@ -18,18 +18,23 @@ from .banco import iniciar as iniciar_banco
 from .rotas import router
 from .controllers import transferencias_controller
 from .services.mensageria import Mensageria
+from .services.bully import Bully, router as bully_router
 
 
 @asynccontextmanager
 async def lifespan(app):
     iniciar_banco()
+    estado.carregar()
     broker = Mensageria(estado.ID_AGENCIA, transferencias_controller.consumir)
     app.state.mensageria = broker
     transferencias_controller.broker_ativo = broker
     await broker.iniciar()
+    app.state.bully = Bully(estado.ID_AGENCIA, estado.relogio, estado.registro)
+    await app.state.bully.iniciar()
     try:
         yield
     finally:
+        await app.state.bully.fechar()
         await broker.fechar()
         fechar_banco()
 
@@ -50,8 +55,10 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(bully_router)
 
 
 @app.get("/", tags=["meta"])
 def raiz() -> dict:
+    estado.verificar_disponibilidade()
     return {"servico": "ICEIBank - agencia", "idAgencia": estado.ID_AGENCIA}

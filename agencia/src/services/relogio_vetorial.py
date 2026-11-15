@@ -25,7 +25,8 @@ class RelogioVetorial:
             raise ValueError("Agencia fora do vetor.")
         self.id_agencia = id_agencia
         self.vetor = [0] * numero_agencias
-        self._lock = threading.Lock()
+        # Permite verificar uma versão e executar o evento sob o mesmo lock.
+        self._lock = threading.RLock()
 
     def evento_local(self) -> list[int]:
         with self._lock:

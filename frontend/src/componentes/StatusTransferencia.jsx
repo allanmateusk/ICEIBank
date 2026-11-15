@@ -70,8 +70,9 @@ export default function StatusTransferencia({
       </ol>
       {falhou && (
         <p className="alerta">
-          O débito permanece aplicado. Este sprint não realiza estorno
-          distribuído automático.
+          {t.estornada
+            ? "O valor foi estornado para a conta de origem."
+            : "Consulte o acompanhamento para verificar a situação do débito."}
         </p>
       )}
       {esperaLonga && (

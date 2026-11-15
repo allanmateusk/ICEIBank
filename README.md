@@ -1,5 +1,12 @@
 # ICEIBank
 
+## Sprint 3 em desenvolvimento
+
+A implementação de eleição Bully, sincronização offline e aplicativo móvel está
+descrita em [docs/sprint3.md](docs/sprint3.md). A aplicação Flutter fica em
+[mobile/](mobile/README.md). A entrega ainda requer verificação em emulador
+e as evidências solicitadas pelo enunciado.
+
 Projeto individual de Allan Mateus: banco acadêmico dividido em três agências.
 A sprint1 está preservada no commit `sprint1`. Esta sprint2 evolui essa base com
 RabbitMQ, relógio vetorial, confirmação de crédito e frontend próprio.
@@ -11,7 +18,8 @@ RabbitMQ, relógio vetorial, confirmação de crédito e frontend próprio.
 - RabbitMQ: exchange topic `iceibank.eventos`, três filas duráveis,
   mensagens persistentes, publisher confirms e ack manual.
 - Uma conta pertence à agência `numero % 3`. Um processo/worker por agência.
-- As contas e a deduplicação ficam em memória: reiniciar perde esse estado.
+- Com `DATABASE_URL`, contas, versões, transferências, deduplicação e fila de
+  publicação são persistidas no Postgres. Sem banco, permanecem em memória.
 
 Transferência remota: débito → publicação → consumo/crédito → evento de
 confirmação → acompanhamento na agência de origem. HTTP 200 de publicação
@@ -21,7 +29,7 @@ processamento local ou recebimento do resultado do destino.
 ## Rodar no Windows / PowerShell
 
 Pré-requisitos: Python 3.12+, [uv](https://docs.astral.sh/uv/),
-Node **20.19+ ou 22.12+**, npm e Docker Desktop para o broker local.
+Node **20.19+, 22.13+ ou 24+**, npm e Docker Desktop para o broker local.
 
 Na raiz, para subir RabbitMQ, Postgres, as três agências e o frontend:
 
@@ -31,13 +39,12 @@ docker compose up -d --build --wait
 
 Abra [o frontend](http://localhost:5173). Na tela inicial, **Criar usuário**
 grava o login no Postgres. Depois de entrar, **Criar conta** cria a conta
-bancária somente na memória da agência. Usuários de desenvolvimento `allan` e `lara` (senha
-`iceibank`) são criados na primeira subida, se ainda não existirem.
+bancária na agência responsável. Escolha seu próprio nome de usuário e senha:
+o sistema não cria usuários de login padrão. O cadastro exige Postgres ativo.
 
 Postgres local: `127.0.0.1:5434`, banco `iceibank`, usuário `iceibank`, senha
-`iceibank-dev`. O volume `postgres-data` guarda somente usuários entre
-reinícios. Contas, saldos, deduplicação e acompanhamento das transferências
-continuam em memória, mesmo com Postgres ativo.
+`iceibank-dev`. O volume `postgres-data` guarda usuários cadastrados e estado
+bancário entre reinícios. Execute apenas um processo por agência.
 
 Para rodar as agências no host, com o banco e o broker no Docker:
 
@@ -118,8 +125,8 @@ A rota REST `creditar-remoto` foi removida: créditos remotos chegam pelo broker
 Estados: `PUBLICANDO`, `PENDENTE`, `CONFIRMADA`, `FALHOU`,
 `FALHA_PUBLICACAO`, `PUBLICACAO_INCERTA`. A confirmação rápida não é sobrescrita
 pela resposta de publicação. O polling tem limite; espera longa ou erro de
-consulta não transforma a transferência em falha. Após reinício, status pode
-retornar 404 porque o acompanhamento também está em memória.
+consulta não transforma a transferência em falha. Com Postgres ativo, o
+acompanhamento sobrevive ao reinício.
 
 ## Testes e evidências
 
@@ -131,6 +138,7 @@ uv run python verificar_vetorial.py
 uv run python -m unittest discover -s tests -v
 cd ../frontend
 npm run build
+npm run lint
 npm audit
 npm run test:e2e
 ```
@@ -139,8 +147,9 @@ O E2E usa o Edge instalado no Windows (sem abrir janela). Em Linux, instale o
 Chromium do Playwright com `npx playwright install chromium`. Os testes usam
 vhosts exclusivos no broker local e processos temporários; limpam apenas esses
 vhosts e o esquema exclusivo de usuários criado pelos testes de integração.
-Esses testes usam o Postgres local em 5434 e verificam login persistente e
-perda das contas após reinício. O E2E mantém também a cobertura sem banco.
+Os testes de integração e o E2E web usam o Postgres local em 5434 e verificam
+persistência após reinício. Parte dos testes unitários cobre também a execução
+sem banco, com dependências simuladas.
 Backend: 14500–14502; E2E: 14600–14602 e 15173. Deixe essas portas livres.
 O teste não usa sua instância CloudAMQP nem altera contas da sessão manual.
 
@@ -164,11 +173,12 @@ em outra pasta. Use `PASTA_DADOS` para separar experimentos e preservar logs.
 
 ## Limites e documentação
 
-Fila durável preserva mensagens, não contas. Se uma agência reiniciar, o crédito
-pode chegar e falhar por conta ausente. O resultado volta à origem e o frontend
-informa que o débito permanece aplicado. Não há estorno automático, outbox,
-persistência financeira ou promessa de exactly-once; esses temas ficam para as
-próximas etapas. Deduplicação vale durante a vida do processo.
+Com Postgres configurado, o débito e a intenção de publicação são persistidos
+juntos; o envio é retomado após reinício e o destino deduplica o crédito. Em
+falha definitiva de crédito, a origem estorna a operação. O RabbitMQ pode
+reentregar mensagens, portanto não há promessa de entrega exactly-once. Sem
+Postgres, contas e deduplicação voltam a ser somente em memória. O estado
+existente em memória em versões antigas não é migrado automaticamente.
 
 [RESPOSTAS.md](RESPOSTAS.md) preserva o material da sprint1 e aponta as respostas
 e observações da sprint2 em [docs/sprint2.md](docs/sprint2.md).
