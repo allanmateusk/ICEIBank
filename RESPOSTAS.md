@@ -450,12 +450,14 @@ indicam líderes diferentes. Mais detalhes e instruções de teste estão em
 
 ### 7.3 — Observação
 
-Nos logs da execução local consultada em 15/11, a agência 2 aparece como líder
-nas declarações observadas: não há mudança de mãos comprovada nessa subida,
-embora ela tenha anunciado a liderança novamente. Eleições ainda custam
-requisições, gravações e tempo de estabilização. Outra ordem de inicialização
-pode produzir resultado diferente; a contagem deve ser conferida no histórico
-gerado para a demonstração entregue.
+Na demonstração isolada de 15/11, por volta de 19:12 no horário local,
+a agência 0 registrou que se elegeu e, em seguida, atualizou sua líder de 0
+para 2. Houve, portanto, **uma mudança observada pela agência 0** nessa
+subida. No reinício seguinte, as três agências convergiram para a líder 2,
+como mostra `evidencias/sprint3/eleicao-inicial.png`. A ordem de hora de
+parede entre processos não prova uma ordem causal global. As eleições custam
+requisições, gravações e tempo de estabilização, e outra ordem de inicialização
+pode produzir uma contagem diferente.
 
 ### 8.3 — Aplicativo
 
@@ -487,9 +489,10 @@ gerado para a demonstração entregue.
    simples exigiriam mais cuidado com alterações parciais e consulta da fila.
 2. O tratamento implementado apresenta o conflito e o saldo atual recebido,
    bloqueando operações posteriores da conta até revisão. Esse comportamento
-   foi verificado em testes de widget. Em Android físico foram testados o acesso,
-   a consulta de saldo, a leitura do saldo armazenado e o failover da líder; a
-   demonstração do conflito 409 no dispositivo continua pendente.
+   foi verificado em Android físico com SQLite e backend reais, inclusive o 409.
+   Nesse teste a rede foi simulada no cliente e o SQLite foi reaberto sem matar
+   o processo Android; a demonstração de desligar a rede do aparelho e reiniciar
+   o processo ainda precisa ser feita.
 3. Uma UI otimista pode sugerir dinheiro disponível antes de a operação ser
    confirmada, ou apresentar saldo que depois conflita. O app distingue saldo
    estimado de confirmado, preserva UUIDs e deixa o resultado incerto visível;

@@ -1,0 +1,29 @@
+# Sobreposição para demonstrar o backend sem alterar o ambiente principal.
+services:
+  rabbitmq:
+    ports: !override
+      - "127.0.0.1:5682:5672"
+      - "127.0.0.1:15682:15672"
+  postgres:
+    ports: !override
+      - "127.0.0.1:5438:5432"
+  agencia-0:
+    ports: !override
+      - "127.0.0.1:4400:4000"
+    volumes: !override
+      - ./.tools/evidencias-sprint3/logs:/app/data
+  agencia-1:
+    ports: !override
+      - "127.0.0.1:4401:4001"
+    volumes: !override
+      - ./.tools/evidencias-sprint3/logs:/app/data
+  agencia-2:
+    ports: !override
+      - "127.0.0.1:4402:4002"
+    volumes: !override
+      - ./.tools/evidencias-sprint3/logs:/app/data
+  frontend:
+    ports: !override
+      - "127.0.0.1:5473:5173"
+    environment:
+      VITE_OFFSET: "400"
