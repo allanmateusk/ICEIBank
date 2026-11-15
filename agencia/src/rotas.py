@@ -38,6 +38,10 @@ router.add_api_route(
     methods=["POST"], dependencies=_usuario, tags=["sincronizacao"],
 )
 router.add_api_route(
+    "/contas/{id_conta}/sincronizar", sincronizacao_controller.sincronizar_roteiro,
+    methods=["POST"], dependencies=_usuario, tags=["sincronizacao"],
+)
+router.add_api_route(
     "/contas",
     contas_controller.criar_conta,
     methods=["POST"],

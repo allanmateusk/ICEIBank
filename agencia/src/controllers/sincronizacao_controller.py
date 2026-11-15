@@ -1,11 +1,13 @@
 """Sincronização offline com controle de versão e idempotência por sessão."""
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 from .. import estado
 from ..esquemas import TransferenciaIn
 from ..services import versao_conta
+from ..services.relogio_vetorial import comparar_vetores
 from . import transferencias_controller
 
 
@@ -31,10 +33,47 @@ class SincronizacaoIn(BaseModel):
         return self
 
 
+class SincronizacaoRoteiroIn(BaseModel):
+    """Contrato de sincronização da seção E do roteiro."""
+    model_config = ConfigDict(extra="forbid")
+    tipo: str
+    valor: float = Field(gt=0, allow_inf_nan=False, multiple_of=0.01)
+    vetorConhecido: list[StrictInt] = Field(min_length=3, max_length=3)
+
+    @model_validator(mode="after")
+    def validar_vetor(self):
+        if any(n < 0 for n in self.vetorConhecido):
+            raise ValueError("Vetor deve conter inteiros nao negativos.")
+        return self
+
+
+async def sincronizar_roteiro(id_conta: int, dados: SincronizacaoRoteiroIn,
+                               request: Request):
+    if dados.tipo not in ("DEPOSITO", "SAQUE"):
+        raise HTTPException(400, "Tipo de operacao invalido.")
+    with estado.transacao(), estado.relogio._lock:
+        conta = estado.contas.get(id_conta)
+        if conta is None:
+            raise HTTPException(404, "Conta nao encontrada nesta agencia.")
+        atual = estado.relogio.vetor.copy()
+        if comparar_vetores(dados.vetorConhecido, atual) != "IGUAIS":
+            return JSONResponse(status_code=409, content={
+                "erro": "Conflito de versao. Atualize a conta antes de sincronizar.",
+                "vetorConhecido": dados.vetorConhecido, "vetorAtual": atual,
+                "contaAtual": versao_conta.snapshot(conta),
+            })
+        pedido = SincronizacaoIn(operacaoId=uuid4(), contaId=id_conta,
+                                 tipo=dados.tipo, valor=dados.valor,
+                                 vetorBase=estado.versoes_contas.get(id_conta, [0, 0, 0]).copy(),
+                                 sessaoServidor=estado.registro.sessao)
+        resposta = await sincronizar(pedido, request)
+        return resposta["conta"]
+
+
 async def sincronizar(dados: SincronizacaoIn, request: Request) -> dict:
     chave = str(dados.operacaoId)
     pedido = dados.model_dump(mode="json")
-    with estado.lock:
+    with estado.transacao():
         anterior = estado.sincronizacoes.get(chave)
         if anterior:
             if anterior["pedido"] != pedido:
@@ -72,7 +111,7 @@ async def sincronizar(dados: SincronizacaoIn, request: Request) -> dict:
     request.state.sincronizacao = dados
     transferencia = await transferencias_controller.transferir(
         TransferenciaIn(idOrigem=dados.contaId, idDestino=dados.destinoId, valor=dados.valor), request, chave)
-    with estado.lock:
+    with estado.transacao():
         conta = estado.contas[dados.contaId]
         status = "SINCRONIZADA" if transferencia["status"] == "CONFIRMADA" else "PENDENTE"
         resposta = {"operacaoId": chave, "status": status, "conta": versao_conta.snapshot(conta),

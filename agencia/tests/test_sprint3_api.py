@@ -2,6 +2,8 @@
 import os
 import tempfile
 import unittest
+from asyncio import Lock
+from types import SimpleNamespace
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -55,6 +57,36 @@ class Sprint3ApiTest(unittest.TestCase):
         conflito = self.client.post('/sincronizacao', json=operacao, headers=self.headers)
         self.assertEqual(conflito.status_code, 409)
         self.assertEqual(conflito.json()['detail']['relacao'], 'ANTES')
+
+    def test_contrato_roteiro_vetor_da_agencia_e_conflicto(self):
+        conta = self.client.get('/contas/300', headers=self.headers).json()
+        pedido = {'tipo': 'DEPOSITO', 'valor': 10, 'vetorConhecido': conta['vetorAtual']}
+        self.assertEqual(self.client.post('/contas/300/sincronizar', json=pedido).status_code, 401)
+        # Um evento de outra conta ou Bully também altera o vetor da agência.
+        estado.relogio.evento_local()
+        conflito = self.client.post('/contas/300/sincronizar', json=pedido, headers=self.headers)
+        self.assertEqual(conflito.status_code, 409)
+        self.assertEqual(conflito.json()['vetorConhecido'], conta['vetorAtual'])
+        self.assertEqual(conflito.json()['contaAtual']['saldo'], 100)
+        pedido['vetorConhecido'] = conflito.json()['vetorAtual']
+        sucesso = self.client.post('/contas/300/sincronizar', json=pedido, headers=self.headers)
+        self.assertEqual(sucesso.status_code, 200)
+        self.assertEqual(sucesso.json()['saldo'], 110)
+        # Repetir pedido com vetor antigo não reaplica o crédito.
+        self.assertEqual(self.client.post('/contas/300/sincronizar', json=pedido, headers=self.headers).status_code, 409)
+        self.assertEqual(self.client.get('/contas/300', headers=self.headers).json()['saldo'], 110)
+        pedido['tipo'] = 'INVALIDO'
+        self.assertEqual(self.client.post('/contas/300/sincronizar', json=pedido, headers=self.headers).status_code, 400)
+
+    def test_campos_lider_compatibilidade(self):
+        original = getattr(app.state, 'bully', None)
+        app.state.bully = SimpleNamespace(id=1, lider=2, lock=Lock())
+        try:
+            resposta = self.client.get('/bully/lider').json()
+            self.assertEqual((resposta['idAgencia'], resposta['liderAtual']), (1, 2))
+            self.assertEqual((resposta['agenciaId'], resposta['liderId']), (1, 2))
+        finally:
+            app.state.bully = original
 
 
 if __name__ == '__main__':

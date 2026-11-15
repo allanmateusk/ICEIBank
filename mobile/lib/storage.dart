@@ -7,7 +7,7 @@ double? projetarSaldo(Map<String, dynamic>? conta, List<Map<String, Object?>> fi
   final operacoes = fila.where((item) => item['conta'] == conta['id']);
   // Uma resposta perdida pode já estar refletida no saldo consultado.
   // Só o replay com o mesmo UUID permite concluir a reconciliação.
-  if (operacoes.any((item) => item['estado'] == 'INCERTA')) return null;
+  if (operacoes.any((item) => ['INCERTA', 'CONFLITO', 'FALHA'].contains(item['estado']))) return null;
   var saldo = (conta['saldo'] as num).toDouble();
   for (final item in operacoes.where((item) => item['estado'] == 'PENDENTE')) {
     final op = jsonDecode(item['dados'] as String) as Map;

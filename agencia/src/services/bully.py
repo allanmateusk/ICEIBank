@@ -1,5 +1,6 @@
 """Eleição Bully e monitoramento da líder para uma agência por processo."""
 import asyncio
+import logging
 import os
 
 import httpx
@@ -9,6 +10,7 @@ from pydantic import BaseModel, Field
 from .. import config
 from .relogio_vetorial import validar_vetor
 
+log = logging.getLogger(__name__)
 
 class Eleicao(BaseModel):
     origemId: int = Field(ge=0, lt=config.NUMERO_AGENCIAS)
@@ -70,7 +72,9 @@ class Bully:
                 resposta = await self.cliente.post(url, json=corpo)
             resposta.raise_for_status()
             return resposta.json()
-        except (httpx.HTTPError, ValueError):
+        except (httpx.HTTPError, ValueError) as erro:
+            log.warning('BULLY_CHAMADA_FALHOU agencia=%s destino=%s rota=%s erro=%s',
+                        self.id, destino, rota, type(erro).__name__)
             return None
 
     async def iniciar_eleicao(self, motivo):
@@ -121,7 +125,19 @@ class Bully:
         validar_vetor(vetor, len(self.urls))
         self.evento('BULLY_ELEICAO_RECEBIDA', {'origemId': origem}, vetor)
         if origem < self.id:
-            await self.iniciar_eleicao('eleicao_recebida')
+            async with self.lock:
+                sou_lider = self.lider == self.id
+                if sou_lider:
+                    anuncio = self.evento('BULLY_COORDENADOR_ENVIADO',
+                                          {'liderId': self.id, 'destinoId': origem})
+            if sou_lider:
+                # Uma nova eleição inferior não invalida a liderança que esta
+                # agência já conquistou. Responda sem reiniciar a eleição nem
+                # bloquear a resposta HTTP aguardando a outra agência.
+                self.criar_tarefa(self.chamar(origem, '/bully/coordenador',
+                                              {'liderId': self.id, 'vetorEnvio': anuncio}))
+            else:
+                await self.iniciar_eleicao('eleicao_recebida')
 
     async def receber_coordenador(self, lider, vetor):
         validar_vetor(vetor, len(self.urls))
@@ -159,13 +175,31 @@ class Bully:
                 # Uma partição pode deixar várias líderes vivas. Ao recuperar
                 # a rede, a líder inferior precisa redescobrir IDs superiores.
                 superiores = [i for i in self.urls if i > self.id]
+                inferiores = [i for i in self.urls if i < self.id]
                 respostas = await asyncio.gather(*(
-                    self.chamar(i, '/bully/lider') for i in superiores))
+                    self.chamar(i, '/bully/lider') for i in superiores + inferiores))
+                respostas_superiores = respostas[:len(superiores)]
                 async with self.lock:
                     reconciliar = self.lider == self.id and any(
-                        r is not None for r in respostas)
+                        r is not None for r in respostas_superiores)
                 if reconciliar:
                     await self.iniciar_eleicao('superior_redescoberta')
+                    continue
+                # Uma mensagem de coordenador pode se perder. Reanuncie a
+                # liderança para nós inferiores acessíveis que ainda não a
+                # conhecem, em vez de depender de uma entrega única no início.
+                async def reconciliar_inferior(destino, resposta):
+                    if resposta is None or resposta.get('liderId') == self.id:
+                        return
+                    async with self.lock:
+                        if self.lider != self.id:
+                            return
+                        vetor = self.evento('BULLY_COORDENADOR_ENVIADO',
+                                             {'liderId': self.id, 'destinoId': destino})
+                    await self.chamar(destino, '/bully/coordenador',
+                                      {'liderId': self.id, 'vetorEnvio': vetor})
+                await asyncio.gather(*(reconciliar_inferior(i, r) for i, r in
+                                       zip(inferiores, respostas[len(superiores):])))
                 continue
             resposta = await self.chamar(lider, '/bully/lider')
             async with self.lock:
@@ -189,6 +223,7 @@ async def lider(request: Request):
     bully = request.app.state.bully
     async with bully.lock:
         return {'agenciaId': bully.id, 'liderId': bully.lider,
+                'idAgencia': bully.id, 'liderAtual': bully.lider,
                 'emEleicao': bully.lider is None}
 
 

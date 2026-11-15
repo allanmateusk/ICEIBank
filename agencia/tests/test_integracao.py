@@ -49,8 +49,16 @@ class IntegracaoTest(unittest.TestCase):
                             json={"configure": ".*", "write": ".*", "read": ".*"}).raise_for_status()
             for agencia in range(3):
                 cls.iniciar(agencia)
-            cls.token = cls.cliente.post(cls.url(0) + "/auth/login",
-                                         json={"usuario": "allan", "senha": "iceibank"}).json()["access_token"]
+            # O esquema isolado começa vazio: nenhum usuário de login é criado
+            # automaticamente. Cadastre explicitamente o usuário do teste.
+            dados_login = {"usuario": "teste_integracao", "senha": "senha-teste-123"}
+            assert cls.cliente.post(cls.url(0) + "/auth/login", json={"usuario": "allan", "senha": "iceibank"}).status_code == 401
+            cadastro = cls.cliente.post(cls.url(0) + "/auth/cadastro", json=dados_login)
+            cadastro.raise_for_status()
+            for agencia in range(3):
+                login = cls.cliente.post(cls.url(agencia) + "/auth/login", json=dados_login)
+                login.raise_for_status()
+            cls.token = login.json()["access_token"]
         except Exception:
             cls.tearDownClass()
             raise
@@ -149,7 +157,7 @@ class IntegracaoTest(unittest.TestCase):
         self.assertEqual(self.chamada(0, "GET", "/contas/300/historico").status_code, 200)
         self.assertEqual(self.chamada(0, "POST", "/contas/300/creditar-remoto", json={}).status_code, 404)
 
-    def test_03_offline_e_conta_perdida(self):
+    def test_03_offline_e_conta_restaurada(self):
         self.criar(304, 20)
         self.parar(1)
         resposta = self.chamada(0, "POST", "/transferencias", json={"idOrigem": 300, "idDestino": 304, "valor": 10})
@@ -164,17 +172,41 @@ class IntegracaoTest(unittest.TestCase):
         self.assertTrue(fila["durable"])
         self.assertEqual(fila.get("consumers"), 0)
         self.assertGreaterEqual(fila.get("messages_ready", 0), 1)
-        self.iniciar(1)
-        resultado = self.esperar_status(resposta.json()["transferenciaId"], "FALHOU")
-        self.assertIn("Conta nao encontrada", resultado["motivo"])
-        self.assertEqual(self.chamada(1, "GET", "/contas/304").status_code, 404)
+        # A origem pode reiniciar enquanto aguarda confirmação.
+        self.parar(0)
+        self.iniciar(0)
+        tid = resposta.json()["transferenciaId"]
+        repetida = self.chamada(0, "POST", "/transferencias",
+            json={"idOrigem": 300, "idDestino": 304, "valor": 10},
+            headers={"Idempotency-Key": tid})
+        self.assertEqual(repetida.status_code, 200, repetida.text)
         self.assertEqual(self.chamada(0, "GET", "/contas/300").json()["saldo"], 65)
+        self.iniciar(1)
+        resultado = self.esperar_status(tid, "CONFIRMADA")
+        self.esperar_saldo(304, 30)
+        self.parar(1)
+        self.iniciar(1)
+        self.esperar_saldo(304, 30)
+        self.assertEqual(self.chamada(0, "GET", "/contas/300").json()["saldo"], 65)
+
+    def test_03a_conta_inexistente_estorna_uma_vez(self):
+        resposta = self.chamada(0, "POST", "/transferencias",
+            json={"idOrigem": 300, "idDestino": 307, "valor": 5})
+        self.assertEqual(resposta.status_code, 200, resposta.text)
+        tid = resposta.json()["transferenciaId"]
+        resultado = self.esperar_status(tid, "FALHOU")
+        self.assertTrue(resultado["estornada"])
+        self.assertEqual(self.chamada(0, "GET", "/contas/300").json()["saldo"], 65)
+        self.parar(0)
+        self.iniciar(0)
+        self.assertEqual(self.chamada(0, "GET", "/contas/300").json()["saldo"], 65)
+        self.assertTrue(self.chamada(0, "GET", f"/transferencias/{tid}").json()["estornada"])
 
     def test_04_status_protegido(self):
         self.assertEqual(self.cliente.get(self.url(0) + f"/transferencias/{uuid4()}").status_code, 401)
         self.assertEqual(self.chamada(0, "GET", f"/transferencias/{uuid4()}").status_code, 404)
 
-    def test_05_cadastro_persiste_sem_persistir_contas(self):
+    def test_05_cadastro_e_contas_persistem(self):
         dados = {"usuario": "usuario_novo", "senha": "senha-teste-123"}
         resposta = self.cliente.post(self.url(2) + "/auth/cadastro", json=dados)
         self.assertEqual(resposta.status_code, 201, resposta.text)
@@ -192,14 +224,13 @@ class IntegracaoTest(unittest.TestCase):
             self.assertNotEqual(bytes(hash_senha), dados["senha"].encode())
             cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = %s",
                         (self.schema,))
-            self.assertEqual({row[0] for row in cur.fetchall()}, {"usuarios"})
+            self.assertEqual({row[0] for row in cur.fetchall()}, {"usuarios", "estado_bancario"})
         self.criar(602, 75)
         self.parar(2)
         self.iniciar(2)
         login = self.cliente.post(self.url(2) + "/auth/login", json=dados)
         self.assertEqual(login.status_code, 200, login.text)
         headers = {"Authorization": "Bearer " + login.json()["access_token"]}
-        self.assertEqual(self.cliente.get(self.url(2) + "/contas/602", headers=headers).status_code, 404)
-        criada = self.cliente.post(self.url(2) + "/contas", headers=headers,
-                                  json={"id": 602, "nomeAluno": "Teste", "saldoInicial": 10})
-        self.assertEqual(criada.status_code, 201, criada.text)
+        conta = self.cliente.get(self.url(2) + "/contas/602", headers=headers)
+        self.assertEqual(conta.status_code, 200, conta.text)
+        self.assertEqual(conta.json()["saldo"], 75)

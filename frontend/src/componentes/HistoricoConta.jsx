@@ -7,9 +7,12 @@ const nomes = {
   CRIAR_CONTA: "Conta criada",
   DEPOSITO: "Depósito",
   SAQUE: "Saque",
+  SINCRONIZACAO_DEPOSITO: "Depósito",
+  SINCRONIZACAO_SAQUE: "Saque",
   TRANSFERENCIA_DEBITO: "Transferência enviada",
   TRANSFERENCIA_CREDITO: "Transferência recebida",
   TRANSFERENCIA_CREDITO_REMOTO: "Crédito recebido",
+  TRANSFERENCIA_ESTORNO: "Estorno de transferência",
   CONFIRMACAO_RECEBIDA: "Resultado da transferência",
   CREDITO_REMOTO_FALHOU: "Crédito não aplicado",
   TRANSFERENCIA_ENVIADA: "Pedido encaminhado",
@@ -67,13 +70,16 @@ export default function HistoricoConta({
       ) : (
         visiveis.map((e, i) => {
           const d = e.detalhes,
-            debito = ["SAQUE", "TRANSFERENCIA_DEBITO"].includes(e.tipo);
+            debito = ["SAQUE", "SINCRONIZACAO_SAQUE", "TRANSFERENCIA_DEBITO"].includes(e.tipo);
           const alteraSaldo = [
             "DEPOSITO",
             "SAQUE",
+            "SINCRONIZACAO_DEPOSITO",
+            "SINCRONIZACAO_SAQUE",
             "TRANSFERENCIA_DEBITO",
             "TRANSFERENCIA_CREDITO",
             "TRANSFERENCIA_CREDITO_REMOTO",
+            "TRANSFERENCIA_ESTORNO",
           ].includes(e.tipo);
           return (
             <div

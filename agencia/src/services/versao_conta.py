@@ -13,8 +13,10 @@ def atualizar(id_conta: int) -> None:
 
 
 def snapshot(conta: dict) -> dict:
+    with estado.relogio._lock:
+        vetor_atual = estado.relogio.vetor.copy()
     return {**conta, "vetorVersao": estado.versoes_contas.get(conta["id"], [0, 0, 0]).copy(),
-            "sessaoServidor": estado.registro.sessao}
+            "vetorAtual": vetor_atual, "sessaoServidor": estado.registro.sessao}
 
 
 def validar(conta: dict, vetor_base: list[int], sessao: str) -> None:

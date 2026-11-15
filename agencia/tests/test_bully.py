@@ -106,3 +106,36 @@ class BullyTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(antigo.cancelled())
         await no.iniciar_eleicao('nova_falha')
         self.assertIsNotNone(no.eleicao)
+
+    async def test_lider_reanuncia_quando_coordenador_inicial_se_perde(self):
+        # O envio inicial pode falhar mesmo quando o nó inferior está ativo.
+        # A líder deve detectar que o nó ainda não conhece a liderança e repetir.
+        no = self.nodos[1]
+        inferior = self.nodos[0]
+        self.rede.agencias.pop(2)
+        no.loop = no.criar_tarefa(no.monitorar())
+        chamadas = 0
+        enviar_original = self.rede.post
+
+        async def perder_primeiro_anuncio(url, json):
+            nonlocal chamadas
+            if url == 'http://0/bully/coordenador':
+                chamadas += 1
+                if chamadas == 1:
+                    raise httpx.ConnectError('anúncio perdido')
+            return await enviar_original(url, json)
+
+        self.rede.post = perder_primeiro_anuncio
+        await no.iniciar_eleicao('teste')
+        await self.aguardar_lider([0, 1], 1)
+        self.assertGreaterEqual(chamadas, 2)
+        self.assertEqual(inferior.lider, 1)
+
+    async def test_lider_responde_eleicao_inferior_sem_reiniciar(self):
+        lider = self.nodos[1]
+        lider.lider = 1
+        antes = lider.geracao
+        await lider.receber_eleicao(0, [1, 0, 0])
+        await self.aguardar_lider([0, 1], 1)
+        self.assertEqual(lider.geracao, antes)
+        self.assertFalse(any(e[0] == 'BULLY_ELEICAO_INICIADA' for e in lider.registro.eventos))

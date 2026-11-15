@@ -409,14 +409,92 @@ O saldo estimado inclui operações ainda não enviadas e fica indisponível qua
 há um envio com resultado incerto. Cada operação tem UUID persistente; uma versão de conta divergente
 ou uma sessão de servidor diferente retorna 409 e bloqueia a fila da conta
 para revisão. A transferência remota ainda precisa ser acompanhada até o
-resultado do crédito no RabbitMQ. Contas e deduplicação permanecem em memória
-na agência; após reinício não é seguro assumir que um pedido incerto foi ou
-não aplicado.
+resultado do crédito no RabbitMQ. Com Postgres ativo, contas e deduplicação
+persistem; um pedido sem resposta ainda exige consulta ou repetição com o mesmo
+UUID, sem assumir que já foi ou não aplicado.
 
 **Funcionalidade adicional:** o painel de diagnóstico consulta as três agências,
 mostra a disponibilidade e a latência observadas e alerta quando suas respostas
 indicam líderes diferentes. Mais detalhes e instruções de teste estão em
 [docs/sprint3.md](docs/sprint3.md).
 
-Pendentes: respostas específicas às questões das seções 5.5, 6.4, 7.3, 8.3,
-9.6 e 10.3 do roteiro.
+### 5.5 — Eleição
+
+1. O Bully usa o maior ID como prioridade: cada participante consulta os IDs
+   superiores e se declara líder quando nenhum responde. Uma regra invertida
+   também poderia eleger uma única líder se todas as agências a seguissem;
+   seria outra convenção de prioridade.
+2. Declarações transitórias podem ocorrer porque as agências sobem em tempos
+   diferentes e nem todas estão acessíveis imediatamente. Os logs desta
+   execução mostram a agência 2 se declarando líder mais de uma vez; isso não
+   implica que a liderança tenha mudado de mãos. A convergência após a rede
+   estabilizar é o comportamento a verificar.
+3. As rotas Bully não autenticam chamadas entre agências. No ambiente local
+   acadêmico a exposição é limitada, mas numa rede acessível permitiria
+   eleições indevidas e negação de serviço. Um ambiente real precisaria de
+   autenticação entre serviços e restrições de rede.
+
+### 6.4 — Heartbeat
+
+1. Intervalos curtos detectam falhas mais depressa, mas fazem mais chamadas e
+   podem aumentar falsas suspeitas; intervalos longos reduzem tráfego ao custo
+   de demorar para detectar uma queda. A implementação usa dois segundos por
+   padrão e exige duas falhas consecutivas para a seguidora iniciar eleição.
+2. O retorno de um ID superior pode provocar nova troca de liderança. Isso
+   mantém a prioridade do Bully, mas em sistemas reais pode interromper tarefas
+   em andamento; seria necessário coordenar essas tarefas e evitar efeitos
+   duplicados. Neste projeto a liderança é informativa.
+3. Uma rede lenta pode provocar suspeitas falsas e líderes temporariamente
+   divergentes. Timeout não prova que o processo caiu; depois da comunicação
+   voltar, as agências tentam reconvergir.
+
+### 7.3 — Observação
+
+Nos logs da execução local consultada em 15/11, a agência 2 aparece como líder
+nas declarações observadas: não há mudança de mãos comprovada nessa subida,
+embora ela tenha anunciado a liderança novamente. Eleições ainda custam
+requisições, gravações e tempo de estabilização. Outra ordem de inicialização
+pode produzir resultado diferente; a contagem deve ser conferida no histórico
+gerado para a demonstração entregue.
+
+### 8.3 — Aplicativo
+
+1. O app consulta o painel a cada cinco segundos. Um intervalo menor reage mais
+   rápido, porém consome mais rede e bateria.
+2. Quando respostas acessíveis divergem, o painel indica divergência em vez de
+   apresentar um consenso inexistente. Pode ser transitório, mas uma partição
+   prolongada exige atenção; não se pode garantir que a próxima consulta cure.
+3. Ambos reaproveitam o contrato REST, JWT e operações bancárias. O mobile
+   acrescenta armazenamento local, conectividade, sincronização e tratamento do
+   ciclo de vida. O código da interface não é compartilhado com React.
+
+### 9.6 — Sincronização no backend
+
+1. O vetor detecta avanço causal mesmo quando operações diferentes deixam o
+   saldo final igual; comparar apenas o saldo perderia essa informação.
+2. O contrato do roteiro compara o vetor da agência inteira, então eventos de
+   outra conta também podem gerar conflito. Para maior precisão, seria necessário
+   manter e atualizar uma versão por conta; a rota usada pelo app adota essa
+   alternativa e também verifica a sessão do servidor.
+3. Ao receber 409, o app mostra o estado informado pelo servidor e bloqueia a
+   fila da conta para revisão. Não reaplica automaticamente uma decisão tomada
+   com dados antigos; a pessoa pode descartar a operação e decidir novamente.
+
+### 10.3 — Offline-first
+
+1. Foi usado SQLite via `sqflite`, por oferecer armazenamento estruturado e
+   transações para a fila. Hive seria uma alternativa de chave e valor; arquivos
+   simples exigiriam mais cuidado com alterações parciais e consulta da fila.
+2. O tratamento implementado apresenta o conflito e o saldo atual recebido,
+   bloqueando operações posteriores da conta até revisão. Esse comportamento
+   foi verificado em testes de widget. Em Android físico foram testados o acesso,
+   a consulta de saldo, a leitura do saldo armazenado e o failover da líder; a
+   demonstração do conflito 409 no dispositivo continua pendente.
+3. Uma UI otimista pode sugerir dinheiro disponível antes de a operação ser
+   confirmada, ou apresentar saldo que depois conflita. O app distingue saldo
+   estimado de confirmado, preserva UUIDs e deixa o resultado incerto visível;
+   o servidor continua validando saldo e versão.
+
+**Uso de IA:** houve apoio de assistente de IA na análise, implementação e
+revisão. Os testes e limitações observados devem ser conferidos e compreendidos
+antes da apresentação e entrega.

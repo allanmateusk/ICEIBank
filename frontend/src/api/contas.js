@@ -1,7 +1,7 @@
 // MODEL - operações de conta (o "o que o sistema faz")
 import { requisitar } from "./cliente.js";
 
-export const consultarSaldo = (id) => requisitar(`/contas/${id}`);
+export const consultarSaldo = (id, opcoes = {}) => requisitar(`/contas/${id}`, opcoes);
 
 export const depositar = (id, valor) =>
   requisitar(`/contas/${id}/depositar`, { metodo: "POST", corpo: { valor } });

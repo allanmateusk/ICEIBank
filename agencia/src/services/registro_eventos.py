@@ -18,18 +18,42 @@ class RegistroEventos:
         self._lock = threading.RLock()
 
     def registrar(self, tipo: str, timestamp: list[int], detalhes: dict) -> dict:
+        return self.registrar_lote([(tipo, timestamp, detalhes)])[0]
+
+    def registrar_lote(self, entradas: list[tuple[str, list[int], dict]]) -> list[dict]:
+        """Grava os eventos de uma operação juntos antes de alterar os saldos.
+
+        Se a escrita falhar, remove a parte gravada sempre que o arquivo ainda
+        estiver acessível. Não oferece garantia de recuperação após queda do SO.
+        """
         with self._lock:
-            self._sequencia += 1
-            evento = {
+            eventos = [{
                 "agencia": self.nome_agencia, "sessaoProcesso": self.sessao,
-                "sequencia": self._sequencia, "tipo": tipo,
+                "sequencia": self._sequencia + indice + 1, "tipo": tipo,
                 "timestampVetorial": list(timestamp),
                 "horaParede": datetime.now(timezone.utc).isoformat(), "detalhes": detalhes,
-            }
-            with open(self.caminho_arquivo, "a", encoding="utf-8") as arquivo:
-                arquivo.write(json.dumps(evento, ensure_ascii=False, allow_nan=False) + "\n")
-            print(f"[Vetor {timestamp}] {tipo} {detalhes}", flush=True)
-            return evento
+            } for indice, (tipo, timestamp, detalhes) in enumerate(entradas)]
+            linhas = "".join(json.dumps(e, ensure_ascii=False, allow_nan=False) + "\n" for e in eventos)
+            with open(self.caminho_arquivo, "a+", encoding="utf-8") as arquivo:
+                arquivo.seek(0, os.SEEK_END)
+                posicao = arquivo.tell()
+                try:
+                    arquivo.write(linhas)
+                    arquivo.flush()
+                except OSError:
+                    try:
+                        arquivo.seek(posicao)
+                        arquivo.truncate()
+                    except OSError:
+                        pass
+                    raise
+            self._sequencia += len(eventos)
+            for evento in eventos:
+                try:
+                    print(f"[Vetor {evento['timestampVetorial']}] {evento['tipo']} {evento['detalhes']}", flush=True)
+                except OSError:
+                    pass
+            return eventos
 
     def ler(self) -> list[dict]:
         with self._lock:

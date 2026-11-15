@@ -2,10 +2,8 @@
 
 Decisões de design (detalhadas e justificadas em RESPOSTAS.md):
 
-- **Credenciais:** usuário + senha. Não há cadastro nem banco neste sprint, então
-  o store de usuários é fixo em memória, com as senhas guardadas como hash
-  PBKDF2-HMAC-SHA256 + salt aleatório por usuário (nunca em texto puro) e
-  comparação em tempo constante.
+- **Credenciais:** usuário cadastrado e senha, armazenados no Postgres com hash
+  PBKDF2-HMAC-SHA256 + salt aleatório e comparação em tempo constante.
 - **Token:** HS256, expira em ``JWT_EXPIRACAO_MIN`` minutos (padrão 30). Claims:
   ``sub`` (usuário), ``escopo``, ``iat``, ``exp``.
 - **Chamada interna entre agências** (``creditar-remoto``): usa um token de
@@ -46,19 +44,12 @@ def _novo_usuario(senha: str) -> dict:
     return {"salt": salt, "hash": _hash_senha(senha, salt)}
 
 
-# Store fixo: em um sistema real viria de um banco de dados.
-_USUARIOS = {
-    "lara": _novo_usuario(os.environ.get("SENHA_LARA", "iceibank")),
-    "allan": _novo_usuario(os.environ.get("SENHA_ALLAN", "iceibank")),
-}
-
-
 def _registro(usuario: str) -> dict | None:
     from .banco import ativo, buscar_usuario
 
     if ativo():
         return buscar_usuario(usuario)
-    return _USUARIOS.get(usuario)
+    return None
 
 
 def autenticar(usuario: str, senha: str) -> bool:

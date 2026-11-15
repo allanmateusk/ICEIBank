@@ -24,6 +24,7 @@ from .services.bully import Bully, router as bully_router
 @asynccontextmanager
 async def lifespan(app):
     iniciar_banco()
+    estado.carregar()
     broker = Mensageria(estado.ID_AGENCIA, transferencias_controller.consumir)
     app.state.mensageria = broker
     transferencias_controller.broker_ativo = broker
@@ -59,4 +60,5 @@ app.include_router(bully_router)
 
 @app.get("/", tags=["meta"])
 def raiz() -> dict:
+    estado.verificar_disponibilidade()
     return {"servico": "ICEIBank - agencia", "idAgencia": estado.ID_AGENCIA}

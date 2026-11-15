@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -44,13 +45,15 @@ void main() {
   testWidgets('resposta de sessão encerrada não sobrescreve a nova sessão', (tester) async {
     final store = MemoryStorage();
     final response = Completer<http.Response>();
-    await tester.pumpWidget(MaterialApp(home: Banking(storage: store)));
+    await tester.pumpWidget(MaterialApp(home: Banking(storage: store,
+        consultarConectividade: () async => [ConnectivityResult.wifi])));
     await tester.pump();
     final dynamic state = tester.state(find.byType(Banking));
     state.usuario = 'allan';
-    state.api = Api('original', client: MockClient((_) => response.future));
+    state.api = Api('original', client: MockClient((req) => req.method == 'GET' ? Future.value(http.Response('{}', 200)) : response.future));
     state.account.text = '300';
     final Future<void> envio = state.sincronizar();
+    await tester.pump();
     await tester.pump();
     await state.sair();
     // Mesmo perfil e conta, mas uma sessão nova: comparar apenas o nome não basta.
@@ -72,12 +75,14 @@ void main() {
     final pedidos = <String>[];
     final estadosNoEnvio = <Object?>[];
     var perderResposta = true;
-    await tester.pumpWidget(MaterialApp(home: Banking(storage: store)));
+    await tester.pumpWidget(MaterialApp(home: Banking(storage: store,
+        consultarConectividade: () async => [ConnectivityResult.wifi])));
     await tester.pump();
     final dynamic state = tester.state(find.byType(Banking));
     state.usuario = 'allan';
     state.account.text = '300';
     state.api = Api('original', client: MockClient((request) async {
+      if (request.method == 'GET') return http.Response('{}', 200);
       pedidos.add(request.body);
       estadosNoEnvio.add(store.rows.first['estado']);
       if (perderResposta) throw TimeoutException('Resposta perdida após aplicar depósito');
@@ -100,6 +105,40 @@ void main() {
     expect(estadosNoEnvio, ['INCERTA', 'INCERTA']);
     expect(pedidos[1], pedidos[0]);
     expect(state.saldoEstimado, 110);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('sessão expirada preserva operação e UUID para reenviar após login', (tester) async {
+    final store = MemoryStorage();
+    final pedidos = <String>[];
+    var expirado = true;
+    await tester.pumpWidget(MaterialApp(home: Banking(storage: store,
+        consultarConectividade: () async => [ConnectivityResult.wifi])));
+    await tester.pump();
+    final dynamic state = tester.state(find.byType(Banking));
+    state.usuario = 'pessoa';
+    state.account.text = '300';
+    state.api = Api('original', client: MockClient((request) async {
+      if (request.method == 'GET') return http.Response('{}', 200);
+      pedidos.add(request.body);
+      if (expirado) return http.Response('{"detail":"Token expirado"}', 401);
+      return http.Response('{"conta":{"id":300,"saldo":110}}', 200);
+    }));
+
+    final Future<void> primeiraTentativa = state.sincronizar();
+    await tester.pump();
+    await primeiraTentativa;
+    expect(store.rows, hasLength(1));
+    expect(store.rows.first['estado'], 'INCERTA');
+    expect(state.status, contains('Sessão expirada'));
+
+    expirado = false;
+    final Future<void> repeticao = state.sincronizar();
+    await tester.pump();
+    await repeticao;
+    expect(pedidos, hasLength(2));
+    expect(pedidos[1], pedidos[0]);
+    expect(store.rows, isEmpty);
     await tester.pumpWidget(const SizedBox());
   });
 }

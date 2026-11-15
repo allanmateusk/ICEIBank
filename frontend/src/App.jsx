@@ -29,6 +29,8 @@ export default function App() {
   const [agencia, setAgencia] = useState(getAgenciaId());
   const [tela, setTela] = useState("resumo");
   const [conta, setConta] = useState(null);
+  const contaAtual = useRef(conta);
+  contaAtual.current = conta;
   const [msg, setMsg] = useState(null);
   const [ocupado, setOcupado] = useState(false);
   const [transferencia, setTransferencia] = useState(null);
@@ -166,8 +168,10 @@ export default function App() {
     return r?.operacao;
   }
 
+  const transferenciaId = transferencia?.transferenciaId;
+  const statusTransferencia = transferencia?.status;
   useEffect(() => {
-    if (!autenticado || !transferencia || !observavel(transferencia.status))
+    if (!autenticado || !transferenciaId || !observavel(statusTransferencia))
       return;
     const controle = new AbortController();
     const atual = contexto.current;
@@ -179,10 +183,24 @@ export default function App() {
     async function consultar() {
       try {
         const r = await transferenciasApi.consultarTransferencia(
-          transferencia.transferenciaId,
+          transferenciaId,
           { base, signal: controle.signal },
         );
         if (!vivo || atual !== contexto.current) return;
+        if (r.estornada && contaAtual.current?.id === r.idOrigem) {
+          // Não sobrescrever uma conta que foi atualizada ou trocada enquanto
+          // o saldo após o estorno estava sendo consultado.
+          const anterior = contaAtual.current;
+          try {
+            const saldo = await contasApi.consultarSaldo(r.idOrigem, { base, signal: controle.signal });
+            if (!vivo || atual !== contexto.current) return;
+            setConta((c) => c === anterior ? saldo : c);
+          } catch (e) {
+            if (!vivo || atual !== contexto.current) return;
+            setConta((c) => c === anterior ? null : c);
+            tratarErro(e);
+          }
+        }
         setTransferencia(r);
         if (!observavel(r.status)) {
           setMsg((m) => (m?.transferenciaId === r.transferenciaId ? null : m));
@@ -207,8 +225,8 @@ export default function App() {
       controle.abort();
     };
   }, [
-    transferencia?.transferenciaId,
-    transferencia?.status,
+    transferenciaId,
+    statusTransferencia,
     agencia,
     autenticado,
     retomar,
@@ -464,8 +482,7 @@ export default function App() {
           )}
         </main>
         <footer>
-          Projeto acadêmico · contas em memória · reiniciar a agência perde suas
-          contas
+          Projeto acadêmico · ICEIBank
         </footer>
       </div>
     </div>

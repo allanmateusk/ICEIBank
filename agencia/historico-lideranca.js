@@ -11,12 +11,17 @@ try {
         try { return JSON.parse(linha); }
         catch { throw new Error(`${nome}:${indice + 1}: JSON inválido`); }
       }))
-    .filter(e => ['BULLY_LIDER_ELEITA', 'BULLY_LIDER_ATUALIZADA', 'BULLY_LIDER_INDISPONIVEL'].includes(e.tipo))
+    .filter(e => ['BULLY_ELEICAO_INICIADA', 'BULLY_ELEICAO_RECEBIDA',
+      'BULLY_LIDER_ELEITA', 'BULLY_LIDER_ATUALIZADA', 'BULLY_LIDER_INDISPONIVEL'].includes(e.tipo))
     .sort((a, b) => String(a.horaParede).localeCompare(String(b.horaParede)) ||
       String(a.agencia).localeCompare(String(b.agencia)) || a.sequencia - b.sequencia);
   console.log('Histórico de liderança (hora de parede; não estabelece causalidade entre agências)');
   for (const e of eventos) {
-    console.log(`${e.horaParede} ${e.agencia} sessão=${e.sessaoProcesso} seq=${e.sequencia} ${e.tipo} líder=${e.detalhes.liderId} vetor=${JSON.stringify(e.timestampVetorial)}`);
+    const detalhes = e.detalhes || {};
+    const campos = ['liderId', 'origemId', 'motivo']
+      .filter(campo => detalhes[campo] !== undefined && detalhes[campo] !== null)
+      .map(campo => `${campo}=${detalhes[campo]}`).join(' ');
+    console.log(`${e.horaParede} ${e.agencia} sessão=${e.sessaoProcesso} seq=${e.sequencia} ${e.tipo}${campos ? ' ' + campos : ''} vetor=${JSON.stringify(e.timestampVetorial)}`);
   }
   if (!eventos.length) console.log('Nenhuma mudança de liderança registrada.');
 } catch (e) {

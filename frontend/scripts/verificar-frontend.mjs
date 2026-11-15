@@ -13,6 +13,11 @@ const frontend = path.resolve(
 const repo = path.resolve(frontend, ".."),
   agenciaDir = path.join(repo, "agencia");
 const vhost = `browser-${randomUUID()}`;
+const schema = `browser_${randomUUID().replaceAll('-', '')}`;
+const usuarioApi = `api_${randomUUID().replaceAll('-', '')}`;
+const usuarioTela = `ui_${randomUUID().replaceAll('-', '')}`;
+const senhaTeste = `teste_${randomUUID()}`;
+const databaseUrl = `postgresql://iceibank:iceibank-dev@127.0.0.1:5434/iceibank?options=-csearch_path%3D${schema}`;
 const portaBase = 14600;
 const pasta = path.join(agenciaDir, "data", vhost);
 const evidencia = process.env.EVIDENCIAS_DIR || path.join(repo, "evidencias", "sprint2");
@@ -56,7 +61,9 @@ async function ready(url, p) {
     if (p.exitCode !== null) throw new Error(`Processo encerrado: ${url}`);
     try {
       if ((await fetch(url)).ok) return;
-    } catch {}
+    } catch {
+      // O servidor pode ainda não estar pronto; tente novamente.
+    }
     await sleep(150);
   }
   throw new Error(`Servidor não iniciou: ${url}`);
@@ -77,16 +84,15 @@ async function iniciar(id) {
     {
       cwd: agenciaDir,
       windowsHide: true,
-      env: Object.fromEntries(
-        Object.entries({
+      env: {
           ...process.env,
           AGENCIA_ID: String(id),
           OFFSET: String(portaBase - 4000),
           PASTA_DADOS: pasta,
           PYTHONUNBUFFERED: "1",
           RABBITMQ_URL: `amqp://iceibank:iceibank-dev@127.0.0.1:5678/${vhost}`,
-        }).filter(([chave]) => chave !== "DATABASE_URL"),
-      ),
+          DATABASE_URL: databaseUrl,
+      },
     },
   );
   processos.set(id, p);
@@ -133,6 +139,7 @@ async function capturarRelatorio(nome, titulo, texto) {
   await p.close();
 }
 try {
+  execFileSync(python, ['-c', 'import psycopg,sys; from psycopg import sql; c=psycopg.connect(sys.argv[1],autocommit=True); c.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(sys.argv[2]))); c.close()', 'postgresql://iceibank:iceibank-dev@127.0.0.1:5434/iceibank', schema], { windowsHide: true });
   await management("PUT", `/vhosts/${vhost}`, {});
   await management("PUT", `/permissions/${vhost}/iceibank`, {
     configure: ".*",
@@ -140,8 +147,9 @@ try {
     read: ".*",
   });
   for (let id = 0; id < 3; id++) await iniciar(id);
+  await api(0, "POST", "/auth/cadastro", { usuario: usuarioApi, senha: senhaTeste });
   token = (
-    await api(0, "POST", "/auth/login", { usuario: "allan", senha: "iceibank" })
+    await api(0, "POST", "/auth/login", { usuario: usuarioApi, senha: senhaTeste })
   ).access_token;
   await Promise.all(
     [300, 301, 302].map((id) =>
@@ -184,9 +192,11 @@ try {
   const erros = [];
   page.on("pageerror", (e) => erros.push(e.message));
   await page.goto("http://127.0.0.1:15173", { waitUntil: "domcontentloaded" });
-  await page.getByLabel("Usuário", { exact: true }).fill("allan");
-  await page.getByLabel("Senha", { exact: true }).fill("iceibank");
-  await page.getByRole("button", { name: "Entrar", exact: true }).click();
+  await page.getByRole("button", { name: "Criar usuário", exact: true }).click();
+  await page.getByLabel("Usuário", { exact: true }).fill(usuarioTela);
+  await page.getByLabel("Senha", { exact: true }).fill(senhaTeste);
+  await page.getByLabel("Confirmar senha", { exact: true }).fill(senhaTeste);
+  await page.getByRole("button", { name: "Criar usuário", exact: true }).click();
   await page.getByRole("heading", { name: "Meu dinheiro" }).waitFor();
   await page
     .getByRole("button", { name: "Consultar conta", exact: true })
@@ -268,6 +278,22 @@ try {
     .locator(".historico .badge")
     .filter({ hasText: "Crédito confirmado" })
     .waitFor();
+  // Movimentações originadas no mobile devem aparecer no histórico web.
+  let contaSincronizada = await api(0, "GET", "/contas/300");
+  for (const [tipo, valor] of [["DEPOSITO", 11], ["SAQUE", 11]]) {
+    const resposta = await api(0, "POST", "/sincronizacao", {
+      operacaoId: randomUUID(), contaId: 300, tipo, valor,
+      vetorBase: contaSincronizada.vetorVersao,
+      sessaoServidor: contaSincronizada.sessaoServidor,
+    });
+    contaSincronizada = resposta.conta;
+  }
+  await page.locator("nav").getByRole("button", { name: "Resumo", exact: true }).click();
+  await page.locator("nav").getByRole("button", { name: "Histórico", exact: true }).click();
+  const depositoOffline = page.locator(".movimentacao").filter({ hasText: "Depósito" }).filter({ hasText: "+ R$ 11,00" });
+  const saqueOffline = page.locator(".movimentacao").filter({ hasText: "Saque" }).filter({ hasText: "− R$ 11,00" });
+  await depositoOffline.waitFor();
+  await saqueOffline.waitFor();
   await page.setViewportSize({ width: 360, height: 900 });
   assert(
     await page.evaluate(
@@ -284,15 +310,23 @@ try {
     ["mesclar_logs.py", "--pasta", pasta, "--limite-pares", "50"],
     { cwd: agenciaDir, encoding: "utf8", windowsHide: true },
   );
-  assert(
-    timeline
-      .split("\n")
-      .some(
-        (l) =>
-          l.includes("agencia-0 CRIAR_CONTA [1, 0, 0]") &&
-          l.includes("agencia-1 CRIAR_CONTA [0, 1, 0]"),
-      ),
-  );
+  assert.match(timeline, /agencia-0 vetor=.* CRIAR_CONTA/);
+  assert.match(timeline, /agencia-1 vetor=.* CRIAR_CONTA/);
+  // Os eventos Bully podem estabelecer causalidade antes do cadastro; validar
+  // concorrência em dados controlados evita supor vetores ou tempos de rede.
+  const fixture = path.join(pasta, "causalidade-controlada");
+  fs.mkdirSync(fixture, { recursive: true });
+  const eventosControlados = [
+    { agencia: "agencia-0", sessaoProcesso: "s0", tipo: "A", timestampVetorial: [1, 0, 0], horaParede: "2026-01-01T00:00:00Z", detalhes: {} },
+    { agencia: "agencia-1", sessaoProcesso: "s1", tipo: "B", timestampVetorial: [0, 1, 0], horaParede: "2026-01-01T00:00:01Z", detalhes: {} },
+    { agencia: "agencia-1", sessaoProcesso: "s1", tipo: "C", timestampVetorial: [1, 2, 0], horaParede: "2026-01-01T00:00:02Z", detalhes: {} },
+  ];
+  fs.writeFileSync(path.join(fixture, "eventos-teste.jsonl"), eventosControlados.map(JSON.stringify).join("\n") + "\n");
+  const causal = execFileSync(python, ["mesclar_logs.py", "--pasta", fixture],
+    { cwd: agenciaDir, encoding: "utf8", windowsHide: true });
+  assert.match(causal, /agencia-0 A \[1, 0, 0\] x agencia-1 B \[0, 1, 0\]/);
+  assert.doesNotMatch(causal, /agencia-0 A \[1, 0, 0\] x agencia-1 C/);
+  assert.match(causal, /Total: 1 pares concorrentes/);
   await capturarRelatorio(
     "linha-do-tempo-causal.png",
     "Linha do tempo causal — experimento sem reinício",
@@ -341,27 +375,42 @@ try {
   await iniciar(1);
   await page
     .locator(".acompanhamento .badge")
-    .filter({ hasText: "Crédito não aplicado" })
+    .filter({ hasText: "Crédito confirmado" })
     .waitFor();
+  assert.equal((await api(1, "GET", "/contas/304")).saldo, 30);
   await page.screenshot({
-    path: path.join(evidencia, "frontend-falha.png"),
+    path: path.join(evidencia, "frontend-confirmada-apos-reinicio.png"),
     fullPage: true,
   });
   await capturarRelatorio(
     "resiliencia-fila.png",
-    "Resiliência — mensagem preservada, conta perdida no reinício",
+    "Resiliência — mensagem e conta preservadas no reinício",
     `Agência 1 desligada: consumidores=${fila.consumers}, mensagens prontas=${fila.messages_ready}, fila durável=${fila.durable}\n${Object.values(
       saidas,
     )
       .join("\n")
       .split("\n")
       .filter((l) =>
-        /CREDITO_REMOTO_FALHOU|CONFIRMACAO_RECEBIDA|TRANSFERENCIA_DEBITO/.test(
+        /TRANSFERENCIA_CREDITO_REMOTO|CONFIRMACAO_RECEBIDA|TRANSFERENCIA_DEBITO/.test(
           l,
         ),
       )
       .join("\n")}`,
   );
+  // Conta remota inexistente: confirmar que o estorno aparece como entrada e
+  // que o saldo do resumo é atualizado depois do resultado assíncrono.
+  const saldoAntesEstorno = (await api(0, "GET", "/contas/300")).saldo;
+  await page.getByLabel("Conta de destino", { exact: true }).fill("307");
+  await page.getByLabel("Valor (R$)", { exact: true }).fill("4,00");
+  await page.getByRole("button", { name: "Revisar transferência" }).click();
+  await page.getByRole("button", { name: "Confirmar envio" }).click();
+  await page.locator(".acompanhamento .badge").filter({ hasText: "Crédito não aplicado" }).waitFor();
+  await page.getByText("O valor foi estornado para a conta de origem.").waitFor();
+  await page.locator("nav").getByRole("button", { name: "Resumo", exact: true }).click();
+  const saldoFormatado = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(saldoAntesEstorno);
+  await page.locator(".saldo-valor").filter({ hasText: saldoFormatado }).waitFor();
+  await page.locator("nav").getByRole("button", { name: "Histórico", exact: true }).click();
+  await page.locator(".movimentacao").filter({ hasText: "Estorno de transferência" }).filter({ hasText: "+ R$ 4,00" }).waitFor();
   // Regressões: histórico local e recuperação de resposta perdida sem novo débito.
   await api(0, "POST", "/transferencias", {
     idOrigem: 300,
@@ -491,7 +540,7 @@ try {
           "mobile 360px",
           "concorrência vetorial",
           "destino offline",
-          "conta perdida após reinício",
+          "conta preservada após reinício",
           "logout",
           "histórico local sem crédito na origem",
           "resposta perdida: mesmo UUID após navegação e reload",
@@ -504,10 +553,11 @@ try {
     ),
   );
   console.log(
-    "OK: frontend real + 3 agências + RabbitMQ; confirmações, pendência, falha, histórico, mobile e evidências verificadas.",
+    "OK: frontend real + 3 agências + RabbitMQ; cadastro, confirmações, pendência, histórico, viewport móvel e evidências verificadas.",
   );
 } finally {
   if (browser) await browser.close();
   for (const id of processos.keys()) await parar(id);
   await management("DELETE", `/vhosts/${vhost}`).catch(() => {});
+  execFileSync(python, ['-c', 'import psycopg,sys; from psycopg import sql; c=psycopg.connect(sys.argv[1],autocommit=True); c.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(sys.argv[2]))); c.close()', 'postgresql://iceibank:iceibank-dev@127.0.0.1:5434/iceibank', schema], { windowsHide: true });
 }

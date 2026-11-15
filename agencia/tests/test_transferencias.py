@@ -6,8 +6,9 @@ from types import SimpleNamespace
 from uuid import uuid4
 from fastapi import HTTPException
 from src import estado
-from src.esquemas import TransferenciaIn
+from src.esquemas import TransferenciaIn, ValorIn
 from src.controllers.transferencias_controller import transferir, receber_credito
+from src.controllers.contas_controller import sacar
 from src.controllers import transferencias_controller as controller
 from src.controllers.historico_controller import historico
 from src.services.registro_eventos import RegistroEventos
@@ -91,6 +92,38 @@ class TransferenciasTest(unittest.IsolatedAsyncioTestCase):
         await transferir(dados, self.request(broker), chave)
         self.assertEqual(len(broker.mensagens), 1)
         self.assertEqual(estado.contas[300]["saldo"], 75)
+
+    async def test_erro_de_outra_operacao_nao_perde_status_da_publicacao(self):
+        class BrokerControlado(BrokerFake):
+            def __init__(self, erro):
+                super().__init__(erro)
+                self.inicio = asyncio.Event()
+                self.continuar = asyncio.Event()
+
+            async def publicar(self, rota, evento):
+                self.inicio.set()
+                await self.continuar.wait()
+                await super().publicar(rota, evento)
+
+        for erro, esperado in ((None, "PENDENTE"), (TimeoutError(), "PUBLICACAO_INCERTA")):
+            with self.subTest(status=esperado):
+                broker = BrokerControlado(erro)
+                chave = str(uuid4())
+                dados = TransferenciaIn(idOrigem=300, idDestino=301, valor=10)
+                tarefa = asyncio.create_task(transferir(dados, self.request(broker), chave))
+                await broker.inicio.wait()
+                # A rejeição restaura o snapshot enquanto o envio está em andamento.
+                with self.assertRaises(HTTPException):
+                    sacar(300, ValorIn(valor=999))
+                broker.continuar.set()
+                if erro:
+                    with self.assertRaises(HTTPException) as falha:
+                        await tarefa
+                    self.assertEqual(falha.exception.detail["status"], esperado)
+                else:
+                    self.assertEqual((await tarefa)["status"], esperado)
+                self.assertEqual(controller.consultar(chave)["status"], esperado)
+        self.assertEqual(estado.contas[300]["saldo"], 80)
 
     async def test_broker_fora_sem_debito(self):
         b = BrokerFake()
